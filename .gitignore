@@ -1,0 +1,8 @@
+data/protein_embeddings/
+**/cache/
+**/model_outputs/
+**/__marimo__/
+work/
+.venv/
+*.pyc
+__pycache__/

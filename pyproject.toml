@@ -1,0 +1,64 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "saturn-impactb"
+version = "0.1.0"
+description = "SATURN cross-species integration for ImpacTB (human → macaque → mouse)"
+requires-python = ">=3.9"
+dependencies = [
+    # PyTorch (CUDA 12.4 wheels via uv index below)
+    "torch==2.6.0",
+    "torchvision==0.21.0",
+    # Core single-cell stack
+    "scanpy>=1.7.2",
+    "anndata>=0.7.6",
+    "pandas>=1.1.5",
+    "numpy==1.26.4",
+    "scipy>=1.10.1",
+    "scikit-learn>=1.3.0",
+    "scikit-misc>=0.5.1",
+    # Clustering (required for on-the-fly Leiden label fallback)
+    "igraph==0.11.4",
+    "leidenalg==0.10.2",
+    "louvain",
+    "pynndescent>=0.5",
+    "umap-learn>=0.4.6",
+    "annoy>=1.17.1",
+    # SATURN upstream requirements
+    "scvi-tools>=1.0.0",
+    "record-keeper",
+    "typed-argument-parser",
+    "fair-esm",
+    "faiss-cpu",
+    "biopython",
+    "tqdm",
+    "matplotlib<3.7",
+    "seaborn",
+  # Marimo notebook
+    "marimo[recommended]>=0.23.0",
+    "h5py>=3.1",
+    "psutil>=5.9",
+]
+
+[project.optional-dependencies]
+gpu = ["faiss-gpu"]
+
+[tool.uv.sources]
+torch = [{ index = "pytorch-cu124" }]
+torchvision = [{ index = "pytorch-cu124" }]
+
+[[tool.uv.index]]
+name = "pytorch-cu124"
+url = "https://download.pytorch.org/whl/cu124"
+explicit = true
+
+[tool.hatch.build.targets.wheel]
+only-include = [
+    "impactb_preprocess.py",
+    "label_resolve.py",
+    "species_map.py",
+    "impac_tb_saturn.py",
+    "smoke_check.py",
+]
