@@ -258,9 +258,9 @@ def _(
         f"SATURN_IMPACTB: downsample target={cache_result['max_cells_per_species']} cells/species",
         flush=True,
     )
-    for species, adata in zip(species_order, adatas):
+    for _species, _adata in zip(species_order, adatas):
         print(
-            f"  {species}: {adata.n_obs:,} cells × {adata.n_vars:,} genes",
+            f"  {_species}: {_adata.n_obs:,} cells × {_adata.n_vars:,} genes",
             flush=True,
         )
     return adatas, cache_result, manifest, n_genes_union, species_order
@@ -279,18 +279,18 @@ def _(
 ):
     label_cols: dict[str, str] = {}
     label_sources: dict[str, str] = {}
-    for species, adata in zip(species_order, adatas):
+    for _species, _adata in zip(species_order, adatas):
         col, source = ResolveLabelColumn(
-            adata,
+            _adata,
             preferred_resolution=LEIDEN_RESOLUTION,
             explicit_col=IN_LABEL_COL,
             n_neighbors=N_NEIGHBORS,
             random_state=TRAINING_RANDOM_SEED,
         )
-        label_cols[species] = col
-        label_sources[species] = source
+        label_cols[_species] = col
+        label_sources[_species] = source
         print(
-            f"SATURN_IMPACTB: labels species={species} col={col} source={source}",
+            f"SATURN_IMPACTB: labels species={_species} col={col} source={source}",
             flush=True,
         )
     label_summary = pd.DataFrame(
@@ -316,14 +316,14 @@ def _(
     h5ad_paths: dict[str, object] = {}
     expr_sources: dict[str, str] = {}
     in_data_label_cols: dict[str, str] = {}
-    for species, adata in zip(species_order, adatas):
-        adata_out, src = resolve_expression_matrix(adata.copy())
-        src_col = label_cols[species]
+    for _species, _adata in zip(species_order, adatas):
+        adata_out, src = resolve_expression_matrix(_adata.copy())
+        src_col = label_cols[_species]
         adata_out.obs[SATURN_LABEL_COL] = adata_out.obs[src_col].astype(str)
-        expr_sources[species] = src
-        out_path = saturn_inputs_dir / f"{species}_saturn.h5ad"
+        expr_sources[_species] = src
+        out_path = saturn_inputs_dir / f"{_species}_saturn.h5ad"
         adata_out.write_h5ad(out_path)
-        h5ad_paths[species] = out_path
+        h5ad_paths[_species] = out_path
     label_cols = {s: SATURN_LABEL_COL for s in species_order}
     in_data_label_cols = label_cols.copy()
     mo.md(label_summary.to_markdown(index=False))
