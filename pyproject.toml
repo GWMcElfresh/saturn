@@ -6,7 +6,7 @@ build-backend = "hatchling.build"
 name = "saturn-impactb"
 version = "0.1.0"
 description = "SATURN cross-species integration for ImpacTB (human → macaque → mouse)"
-requires-python = ">=3.9"
+requires-python = ">=3.10"
 dependencies = [
     # PyTorch (CUDA 12.4 wheels via uv index below)
     "torch==2.6.0",
@@ -22,7 +22,6 @@ dependencies = [
     # Clustering (required for on-the-fly Leiden label fallback)
     "igraph==0.11.4",
     "leidenalg==0.10.2",
-    "louvain",
     "pynndescent>=0.5",
     "umap-learn>=0.4.6",
     "annoy>=1.17.1",

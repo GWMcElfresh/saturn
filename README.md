@@ -6,7 +6,7 @@ Workflow is driven by a [marimo](https://marimo.io) notebook (`impac_tb_saturn.p
 
 ## Requirements
 
-- Python ≥ 3.9
+- Python ≥ 3.10 (marimo 0.23+; use 3.10–3.11 if you need the deprecated `louvain` package for vendor vignettes)
 - CUDA GPU recommended for training (CPU possible for smoke tests)
 - Harmonized ImpacTB AnnData outputs (`integration_manifest.csv` + per-species `.h5ad`)
 - SATURN protein embeddings (one-time download, see below)
