@@ -20,9 +20,22 @@ def _(mo):
     using the same preprocessing as `scMODAL_ImpacTB_HVGDownsample` (subject-balanced downsample to min species count,
     HVG union `seurat_v3`). Labels: cell type → existing clusters (resolution ≈ 0.5) → on-the-fly Leiden.
 
-  **Protein embeddings** (one-time): `curl -L http://snap.stanford.edu/saturn/data/protein_embeddings.tar.gz | tar -xz -C data/`
+    **Protein embeddings** (one-time): `curl -L http://snap.stanford.edu/saturn/data/protein_embeddings.tar.gz | tar -xz -C data/`
 
     **Dry run** (skip training): `SATURN_DRY_RUN=1 marimo run impac_tb_saturn.py`
+    """)
+    return
+
+
+@app.cell(hide_code=True)
+def _(mo):
+    mo.md(r"""
+    ## Working directory
+
+    Resolve a writable scratch location for caches, model outputs, and temp files.
+    Priority: `WORKING_DIR` env var → Nextflow task dir → OHSU gscratch default →
+    cluster `TMPDIR` → local `work/` beside this notebook. Also redirects matplotlib,
+    Numba, and XDG caches away from `$HOME` (required on many HPC systems).
     """)
     return
 
@@ -81,12 +94,25 @@ def _():
         "XDG_CACHE_HOME": TMP_ROOT / "xdg_cache",
     }
     os.environ["MPLBACKEND"] = "Agg"
-    for env_key, path in _cache_targets.items():
-        path.mkdir(parents=True, exist_ok=True)
-        os.environ[env_key] = str(path)
+    for _env_key, _path in _cache_targets.items():
+        _path.mkdir(parents=True, exist_ok=True)
+        os.environ[_env_key] = str(_path)
     os.chdir(WORKING_DIR)
     print(f"SATURN_IMPACTB: WORKING_DIR = {WORKING_DIR}", flush=True)
     return TMP_ROOT, WORKING_DIR, os, pathlib
+
+
+@app.cell(hide_code=True)
+def _(mo):
+    mo.md(r"""
+    ## Configuration
+
+    Paths and hyperparameters from environment variables (see `README.md` for the full list).
+    Key inputs: harmonized AnnData directory, HVG/downsample settings, label-resolution
+    options, and SATURN training knobs (`SATURN_*`). `SATURN_DRY_RUN=1` validates inputs
+    without launching training.
+    """)
+    return
 
 
 @app.cell
@@ -159,6 +185,17 @@ def _(os, pathlib):
     )
 
 
+@app.cell(hide_code=True)
+def _(mo):
+    mo.md(r"""
+    ## Imports
+
+    Load scanpy, PyTorch, and project helpers (`impactb_preprocess`, `label_resolve`,
+    `species_map`). Vendor SATURN is added to `sys.path` when present.
+    """)
+    return
+
+
 @app.cell
 def _(SATURN_ROOT, VENDOR_SATURN):
     import json
@@ -209,6 +246,17 @@ def _(SATURN_ROOT, VENDOR_SATURN):
     )
 
 
+@app.cell(hide_code=True)
+def _(mo):
+    mo.md(r"""
+    ## Output directories
+
+    Create `cache/` (preprocessed AnnData, SATURN input h5ads) and `model_outputs/`
+    (training artifacts, plots, run summary) under `WORKING_DIR`.
+    """)
+    return
+
+
 @app.cell
 def _(CACHE_SUBDIR, WORKING_DIR):
     cache_dir = WORKING_DIR / CACHE_SUBDIR
@@ -220,6 +268,19 @@ def _(CACHE_SUBDIR, WORKING_DIR):
     print(f"SATURN_IMPACTB: cache_dir = {cache_dir}", flush=True)
     print(f"SATURN_IMPACTB: out_dir   = {out_dir}", flush=True)
     return cache_dir, out_dir, saturn_inputs_dir
+
+
+@app.cell(hide_code=True)
+def _(mo):
+    mo.md(r"""
+    ## Preprocess harmonized data
+
+    Load per-species AnnData from `HARMONIZED_DIR` via `integration_manifest.csv`.
+    Subject-balanced downsample to the smallest species count (or `MAX_CELLS_PER_SPECIES`),
+    then per-species HVG selection and union (`seurat_v3` by default). Results are cached
+    on disk so reruns skip recomputation when parameters match.
+    """)
+    return
 
 
 @app.cell
@@ -239,7 +300,7 @@ def _(
     _max_cells = (
         MAX_CELLS_PER_SPECIES
         if MAX_CELLS_PER_SPECIES > 0
-        else min(a.n_obs for a in _raw_adatas)
+        else min(_a.n_obs for _a in _raw_adatas)
     )
     cache_result = build_or_load_cache(
         HARMONIZED_DIR,
@@ -266,6 +327,18 @@ def _(
     return adatas, cache_result, manifest, n_genes_union, species_order
 
 
+@app.cell(hide_code=True)
+def _(mo):
+    mo.md(r"""
+    ## Resolve training labels
+
+    For each species, pick a label column for SATURN supervision: explicit `IN_LABEL_COL`
+    if set, else cell-type annotations, else existing Leiden clusters near resolution 0.5,
+    else on-the-fly Leiden at `LEIDEN_RESOLUTION`. Prints the chosen column and source per species.
+    """)
+    return
+
+
 @app.cell
 def _(
     IN_LABEL_COL,
@@ -280,26 +353,42 @@ def _(
     label_cols: dict[str, str] = {}
     label_sources: dict[str, str] = {}
     for _species, _adata in zip(species_order, adatas):
-        col, source = ResolveLabelColumn(
+        _col, _source = ResolveLabelColumn(
             _adata,
             preferred_resolution=LEIDEN_RESOLUTION,
             explicit_col=IN_LABEL_COL,
             n_neighbors=N_NEIGHBORS,
             random_state=TRAINING_RANDOM_SEED,
         )
-        label_cols[_species] = col
-        label_sources[_species] = source
+        label_cols[_species] = _col
+        label_sources[_species] = _source
         print(
-            f"SATURN_IMPACTB: labels species={_species} col={col} source={source}",
+            f"SATURN_IMPACTB: labels species={_species} col={_col} source={_source}",
             flush=True,
         )
     label_summary = pd.DataFrame(
         [
-            {"species": s, "label_col": label_cols[s], "label_source": label_sources[s]}
-            for s in species_order
+            {
+                "species": _s,
+                "label_col": label_cols[_s],
+                "label_source": label_sources[_s],
+            }
+            for _s in species_order
         ]
     )
     return label_cols, label_sources, label_summary
+
+
+@app.cell(hide_code=True)
+def _(mo):
+    mo.md(r"""
+    ## Export SATURN input h5ads
+
+    Copy each species AnnData to `cache/saturn_inputs/`, normalize the expression layer
+    SATURN expects, and write labels into a unified `saturn_label` column. Displays a
+    summary table of label columns and sources.
+    """)
+    return
 
 
 @app.cell
@@ -315,19 +404,29 @@ def _(
     SATURN_LABEL_COL = "saturn_label"
     h5ad_paths: dict[str, object] = {}
     expr_sources: dict[str, str] = {}
-    in_data_label_cols: dict[str, str] = {}
     for _species, _adata in zip(species_order, adatas):
-        adata_out, src = resolve_expression_matrix(_adata.copy())
-        src_col = label_cols[_species]
-        adata_out.obs[SATURN_LABEL_COL] = adata_out.obs[src_col].astype(str)
-        expr_sources[_species] = src
-        out_path = saturn_inputs_dir / f"{_species}_saturn.h5ad"
-        adata_out.write_h5ad(out_path)
-        h5ad_paths[_species] = out_path
-    label_cols = {s: SATURN_LABEL_COL for s in species_order}
-    in_data_label_cols = label_cols.copy()
+        _adata_out, _src = resolve_expression_matrix(_adata.copy())
+        _src_col = label_cols[_species]
+        _adata_out.obs[SATURN_LABEL_COL] = _adata_out.obs[_src_col].astype(str)
+        expr_sources[_species] = _src
+        _out_path = saturn_inputs_dir / f"{_species}_saturn.h5ad"
+        _adata_out.write_h5ad(_out_path)
+        h5ad_paths[_species] = _out_path
+    in_data_label_cols = {_s: SATURN_LABEL_COL for _s in species_order}
     mo.md(label_summary.to_markdown(index=False))
     return expr_sources, h5ad_paths, in_data_label_cols
+
+
+@app.cell(hide_code=True)
+def _(mo):
+    mo.md(r"""
+    ## Protein embeddings
+
+    Verify per-species ESM embedding `.pt` files exist under `data/protein_embeddings/`.
+    Stops with a download command if any are missing. In dry-run mode, reports success
+    without proceeding to training.
+    """)
+    return
 
 
 @app.cell
@@ -343,19 +442,30 @@ def _(
     embedding_paths = RequiredEmbeddingPaths(
         species_order, EMBEDDINGS_DIR, SATURN_EMBEDDING_MODEL
     )
-    missing = [str(p) for p in embedding_paths.values() if not p.exists()]
+    missing = [str(_p) for _p in embedding_paths.values() if not _p.exists()]
     if missing:
-        cmd = ProteinEmbeddingsDownloadCommand(EMBEDDINGS_DIR)
+        _cmd = ProteinEmbeddingsDownloadCommand(EMBEDDINGS_DIR)
         mo.stop(
             mo.md(
                 f"**Missing protein embeddings** ({len(missing)} files).\n\n"
-                f"```bash\n{cmd}\n```\n\n"
+                f"```bash\n{_cmd}\n```\n\n"
                 "Or set paths via embedding_path in in_data.csv."
             )
         )
     if SATURN_DRY_RUN:
-        mo.md("**SATURN_DRY_RUN=1** — skipping training; inputs validated.")
+        _ = mo.md("**SATURN_DRY_RUN=1** — skipping training; inputs validated.")
     return embedding_paths, missing
+
+
+@app.cell(hide_code=True)
+def _(mo):
+    mo.md(r"""
+    ## Build `in_data.csv`
+
+    Write SATURN's species manifest (`data/in_data.csv`) linking each h5ad path,
+    embedding file, and label column.
+    """)
+    return
 
 
 @app.cell
@@ -373,6 +483,18 @@ def _(
     )
     print(f"SATURN_IMPACTB: in_data.csv -> {in_data_path}", flush=True)
     return (in_data_path,)
+
+
+@app.cell(hide_code=True)
+def _(mo):
+    mo.md(r"""
+    ## Train SATURN
+
+    Launch vendor `train-saturn.py` with macrogene count, pretrain/fine-tune epochs,
+    batch sizes, and reference-species label column. Skipped when `SATURN_DRY_RUN=1`.
+    Outputs land in `model_outputs/`.
+    """)
+    return
 
 
 @app.cell
@@ -398,13 +520,13 @@ def _(
     run_name = None
     train_cmd = []
     if not SATURN_DRY_RUN:
-        train_script = VENDOR_SATURN / "train-saturn.py"
-        if not train_script.exists():
-            raise RuntimeError(f"SATURN vendor not found: {train_script}")
-        ref_label_col = in_data_label_cols[species_order[0]]
+        _train_script = VENDOR_SATURN / "train-saturn.py"
+        if not _train_script.exists():
+            raise RuntimeError(f"SATURN vendor not found: {_train_script}")
+        _ref_label_col = in_data_label_cols[species_order[0]]
         train_cmd = [
             sys.executable,
-            str(train_script),
+            str(_train_script),
             "--in_data",
             str(in_data_path),
             "--work_dir",
@@ -430,17 +552,28 @@ def _(
             "--device_num",
             str(SATURN_DEVICE_NUM),
             "--ref_label_col",
-            ref_label_col,
+            _ref_label_col,
             "--centroids_init_path",
             str(out_dir / "centroids_init.pkl"),
         ]
         print("SATURN_IMPACTB: launching train-saturn.py", flush=True)
-        result = subprocess.run(train_cmd, check=False, cwd=str(VENDOR_SATURN))
-        if result.returncode != 0:
-            raise RuntimeError(f"train-saturn.py failed with code {result.returncode}")
+        _result = subprocess.run(train_cmd, check=False, cwd=str(VENDOR_SATURN))
+        if _result.returncode != 0:
+            raise RuntimeError(f"train-saturn.py failed with code {_result.returncode}")
         _h5ads = sorted(out_dir.glob("*.h5ad"))
         run_name = _h5ads[0] if _h5ads else None
     return run_name, train_cmd
+
+
+@app.cell(hide_code=True)
+def _(mo):
+    mo.md(r"""
+    ## UMAP visualization
+
+    After training, load the integrated h5ad from `model_outputs/`, compute UMAP if needed,
+    and save species- and label-colored plots as PNGs. Skipped in dry-run mode.
+    """)
+    return
 
 
 @app.cell
@@ -451,16 +584,28 @@ def _(SATURN_DRY_RUN, out_dir, plt, run_name, sc):
         if "X_umap" not in integrated.obsm:
             sc.pp.neighbors(integrated, use_rep="X", n_neighbors=15)
             sc.tl.umap(integrated)
-        fig, ax = plt.subplots(figsize=(6, 5))
-        sc.pl.umap(integrated, color="species", show=False, ax=ax)
-        fig.savefig(out_dir / "umap_species.png", dpi=120, bbox_inches="tight")
-        plt.close(fig)
+        _fig, _ax = plt.subplots(figsize=(6, 5))
+        sc.pl.umap(integrated, color="species", show=False, ax=_ax)
+        _fig.savefig(out_dir / "umap_species.png", dpi=120, bbox_inches="tight")
+        plt.close(_fig)
         if "labels2" in integrated.obs.columns:
-            fig, ax = plt.subplots(figsize=(6, 5))
-            sc.pl.umap(integrated, color="labels2", show=False, ax=ax)
-            fig.savefig(out_dir / "umap_labels.png", dpi=120, bbox_inches="tight")
-            plt.close(fig)
+            _fig, _ax = plt.subplots(figsize=(6, 5))
+            sc.pl.umap(integrated, color="labels2", show=False, ax=_ax)
+            _fig.savefig(out_dir / "umap_labels.png", dpi=120, bbox_inches="tight")
+            plt.close(_fig)
     return (integrated,)
+
+
+@app.cell(hide_code=True)
+def _(mo):
+    mo.md(r"""
+    ## Write run artifacts
+
+    Copy manifest and shared-gene files, export downsample summary CSV, and write
+    `run_summary.json` / `run_summary.csv` with paths, label choices, and the training
+    command for reproducibility.
+    """)
+    return
 
 
 @app.cell
@@ -492,7 +637,7 @@ def _(
     cache_result["training_downsample_summary"].to_csv(
         out_dir / "training_downsample_summary.csv", index=False
     )
-    summary = {
+    _summary = {
         "species_order": species_order,
         "n_genes_union": n_genes_union,
         "label_cols": label_cols,
@@ -503,8 +648,8 @@ def _(
         "train_cmd": train_cmd,
         "integrated_path": str(integrated.filename) if integrated is not None else None,
     }
-    (out_dir / "run_summary.json").write_text(json.dumps(summary, indent=2))
-    pd.DataFrame([summary]).to_csv(out_dir / "run_summary.csv", index=False)
+    (out_dir / "run_summary.json").write_text(json.dumps(_summary, indent=2))
+    pd.DataFrame([_summary]).to_csv(out_dir / "run_summary.csv", index=False)
     print(f"SATURN_IMPACTB: artifacts in {out_dir}", flush=True)
     return
 
