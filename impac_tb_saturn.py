@@ -108,9 +108,10 @@ def _(mo):
     ## Configuration
 
     Paths and hyperparameters from environment variables (see `README.md` for the full list).
-    Key inputs: harmonized AnnData directory, HVG/downsample settings, label-resolution
-    options, and SATURN training knobs (`SATURN_*`). `SATURN_DRY_RUN=1` validates inputs
-    without launching training.
+    Key inputs: harmonized AnnData under `outputs/harmonized/` (override with `HARMONIZED_DIR`),
+    HVG/downsample settings, label-resolution options, and SATURN training knobs (`SATURN_*`).
+    Preprocessing cache lives in `./cache/` beside this notebook. `SATURN_DRY_RUN=1` validates
+    inputs without launching training.
     """)
     return
 
@@ -124,7 +125,7 @@ def _(os, pathlib):
     HARMONIZED_DIR = pathlib.Path(
         os.environ.get(
             "HARMONIZED_DIR",
-            "/home/exacloud/gscratch/prime-seq/Bimber/GW/scModal_ImpacTB/outputs/harmonized/harmonized_outputs/",
+            str(SATURN_ROOT / "outputs" / "harmonized" / "harmonized_outputs"),
         )
     )
 
@@ -251,15 +252,15 @@ def _(mo):
     mo.md(r"""
     ## Output directories
 
-    Create `cache/` (preprocessed AnnData, SATURN input h5ads) and `model_outputs/`
-    (training artifacts, plots, run summary) under `WORKING_DIR`.
+    Create `cache/` (preprocessed AnnData, SATURN input h5ads) beside this notebook and
+    `model_outputs/` (training artifacts, plots, run summary) under `WORKING_DIR`.
     """)
     return
 
 
 @app.cell
-def _(CACHE_SUBDIR, WORKING_DIR):
-    cache_dir = WORKING_DIR / CACHE_SUBDIR
+def _(CACHE_SUBDIR, SATURN_ROOT, WORKING_DIR):
+    cache_dir = SATURN_ROOT / CACHE_SUBDIR
     cache_dir.mkdir(parents=True, exist_ok=True)
     out_dir = WORKING_DIR / "model_outputs"
     out_dir.mkdir(parents=True, exist_ok=True)

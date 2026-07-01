@@ -82,11 +82,11 @@ Gene symbols in your `.h5ad` must appear in each species’ embedding dict. See 
 ### 4. Point at harmonized data
 
 ```bash
-export HARMONIZED_DIR=/path/to/harmonized_outputs/
+export HARMONIZED_DIR=/path/to/harmonized_outputs/   # optional; default: ./outputs/harmonized/harmonized_outputs
 export WORKING_DIR=/path/to/scratch/saturn_impac_tb   # must not be $HOME on HPC
 ```
 
-Default `HARMONIZED_DIR` targets OHSU gscratch; override for your system.
+Defaults assume harmonized outputs live under `outputs/harmonized/` in this repo and preprocessing cache under `./cache/`. Override for other layouts or HPC scratch paths.
 
 ### 5. Run
 
@@ -120,8 +120,9 @@ python smoke_check.py
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `HARMONIZED_DIR` | gscratch harmonized path | Directory with `integration_manifest.csv` |
-| `WORKING_DIR` | gscratch scratch path | Cache, outputs, temp files |
+| `HARMONIZED_DIR` | `./outputs/harmonized/harmonized_outputs` | Directory with `integration_manifest.csv` |
+| `WORKING_DIR` | gscratch scratch path | Temp files and `model_outputs/` |
+| `CACHE_SUBDIR` | `cache` | Preprocessed AnnData cache (under saturn root, not `WORKING_DIR`) |
 | `MAX_CELLS_PER_SPECIES` | `0` (auto = min species) | Downsample cap per species |
 | `N_TOP_GENES_PER_SPECIES` | `3000` | HVG count before union |
 | `HVG_FLAVOR` | `seurat_v3` | scanpy HVG method |
@@ -171,10 +172,13 @@ saturn/
 
 ## Outputs
 
-Under `$WORKING_DIR`:
+Under `./cache/` (saturn project root):
 
 - `cache/downsampled_hvg/` — cached downsampled + HVG-subset AnnData
 - `cache/saturn_inputs/` — per-species h5ad for SATURN
+
+Under `$WORKING_DIR`:
+
 - `model_outputs/` — SATURN run artifacts, UMAP plots, `run_summary.json`
 
 ## Upstream references
