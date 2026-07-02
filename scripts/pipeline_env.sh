@@ -1,19 +1,26 @@
 #!/bin/bash
-# Shared SLURM log helpers for saturn launch scripts.
+# Shared paths and SLURM helpers for saturn launch scripts.
+# Source via: source "${PROJECT_DIR}/scripts/pipeline_env.sh"
+# (Never use BASH_SOURCE for this path — SLURM copies job scripts to /var/spool/slurmd/.)
+
+: "${PROJECT_DIR:=/home/exacloud/gscratch/prime-seq/Bimber/GW/saturn}"
+export PROJECT_DIR
+
+LOG_DIR="${LOG_DIR:-${PROJECT_DIR}/logs}"
 
 prepare_saturn_slurm_logs() {
   local step="$1"
-  local script_dir="$2"
+  local project_dir="${2:-${PROJECT_DIR}}"
 
   SATURN_STEP="${step}"
-  LOG_DIR="${LOG_DIR:-${script_dir}/logs}"
+  LOG_DIR="${LOG_DIR:-${project_dir}/logs}"
   mkdir -p "${LOG_DIR}"
   SUBMIT_TIMESTAMP="$(date +%Y%m%d-%H%M%S)"
   SLURM_LOG_OUT="${LOG_DIR}/${SATURN_STEP}-${SUBMIT_TIMESTAMP}-%j.out"
   SLURM_LOG_ERR="${LOG_DIR}/${SATURN_STEP}-${SUBMIT_TIMESTAMP}-%j.err"
 }
 
-# On a login node, sbatch this script with annotated log paths; on a compute node, no-op.
+# On a login node, sbatch the repo script with annotated log paths; on a compute node, no-op.
 saturn_slurm_launch() {
   local step="$1"
   local script_path="$2"
@@ -23,20 +30,16 @@ saturn_slurm_launch() {
     return 0
   fi
 
-  local script_dir
-  script_dir="$(cd "$(dirname "${script_path}")" && pwd)"
-  # shellcheck disable=SC1091
-  source "${script_dir}/pipeline_logs.sh"
-  prepare_saturn_slurm_logs "${step}" "${script_dir}"
+  prepare_saturn_slurm_logs "${step}" "${PROJECT_DIR}"
 
-  export SATURN_STEP LOG_DIR SUBMIT_TIMESTAMP
+  export PROJECT_DIR SATURN_STEP LOG_DIR SUBMIT_TIMESTAMP
 
   echo "Submitting saturn-${step}; logs -> ${LOG_DIR}/${SATURN_STEP}-${SUBMIT_TIMESTAMP}-<jobid>.{out,err}"
   exec sbatch \
     --job-name="saturn-${step}" \
     --output="${SLURM_LOG_OUT}" \
     --error="${SLURM_LOG_ERR}" \
-    --export=ALL \
+    --export=ALL,PROJECT_DIR="${PROJECT_DIR}" \
     "$@" \
     "${script_path}"
 }

@@ -112,11 +112,20 @@ python smoke_check.py
 - [`submit_run.sh`](submit_run.sh) — headless batch (`python impac_tb_saturn.py`)
 - [`submit.sh`](submit.sh) — interactive only (`marimo edit --headless` + SSH port forward)
 
-Run `bash submit_run.sh` or `bash submit.sh` from the repo (not raw `sbatch`) so each job creates a local `logs/` directory and writes annotated files:
+Run `bash submit_run.sh` or `bash submit.sh` from the repo (not raw `sbatch`) so each job creates `${PROJECT_DIR}/logs/` and writes annotated files:
 
 `logs/<step>-<YYYYMMDD-HHMMSS>-<jobid>.{out,err}`
 
 Examples: `logs/batch-20250702-143022-12345.out`, `logs/interactive-20250702-150011-12346.out`.
+
+Launch scripts source [`scripts/pipeline_env.sh`](scripts/pipeline_env.sh) via `${PROJECT_DIR}` (not `BASH_SOURCE`) so they work after SLURM copies the job script to `/var/spool/slurmd/`.
+
+**Default SLURM allocations** (override with `sbatch` flags if needed; cluster cap 1 TB RAM):
+
+| Script | CPUs | Memory | Walltime |
+|--------|------|--------|----------|
+| `submit_run.sh` (batch) | 8 | 512 GB | 24 h |
+| `submit.sh` (interactive) | 4 | 128 GB | 8 h |
 
 A successful batch log shows `SATURN_BATCH:` startup lines and `SATURN_IMPACTB:` progress, then artifacts under `$WORKING_DIR/model_outputs/` (including `run_summary.json`). If the log shows `URL: http://localhost:...`, the job used `marimo run` by mistake and likely produced no outputs.
 

@@ -1,9 +1,9 @@
 #!/bin/bash
-#SBATCH --time=08:00:00
+#SBATCH --time=24:00:00
 #SBATCH --signal=USR2
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=4
-#SBATCH --mem=64GB
+#SBATCH --mem=512GB
 #SBATCH --partition=gpu
 #SBATCH --gres=gpu:1
 
@@ -12,18 +12,15 @@
 # Do NOT use marimo run here — that starts a web server and waits for a browser.
 # Submit: bash submit_run.sh  (creates logs/ and writes logs/batch-<timestamp>-<jobid>.out)
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+export PROJECT_DIR="${PROJECT_DIR:-/home/exacloud/gscratch/prime-seq/Bimber/GW/saturn}"
 # shellcheck disable=SC1091
-source "${SCRIPT_DIR}/pipeline_logs.sh"
-saturn_slurm_launch batch "${BASH_SOURCE[0]}"
+source "${PROJECT_DIR}/scripts/pipeline_env.sh"
+saturn_slurm_launch batch "${PROJECT_DIR}/submit_run.sh"
 
-# Project paths on gscratch
-PROJECT_DIR="${PROJECT_DIR:-/home/exacloud/gscratch/prime-seq/Bimber/GW/saturn}"
 NOTEBOOK="${NOTEBOOK:-impac_tb_saturn.py}"
 WORKING_DIR="${WORKING_DIR:-/home/exacloud/gscratch/prime-seq/Bimber/GW/scModal_ImpacTB/saturn_impac_tb}"
 HARMONIZED_DIR="${HARMONIZED_DIR:-/home/exacloud/gscratch/prime-seq/Bimber/GW/scModal_ImpacTB/outputs/harmonized/harmonized_outputs/}"
 VENV_DIR="${VENV_DIR:-${PROJECT_DIR}/.venv}"
-LOG_DIR="${LOG_DIR:-${SCRIPT_DIR}/logs}"
 
 # Writable temp: compute-node scratch when available, else project gscratch
 if [[ -n "${SLURM_TMPDIR:-}" ]]; then
@@ -35,7 +32,7 @@ mkdir -p -m 700 "${tmpdir}/tmp"
 
 export TMPDIR="${tmpdir}/tmp"
 export WORKING_DIR HARMONIZED_DIR
-export OMP_NUM_THREADS="${SLURM_JOB_CPUS_PER_NODE}"
+export OMP_NUM_THREADS="${SLURM_CPUS_PER_TASK:-${SLURM_JOB_CPUS_PER_NODE:-8}}"
 export MPLBACKEND=Agg
 export CUDA_VISIBLE_DEVICES="${CUDA_VISIBLE_DEVICES:-0}"
 
@@ -55,6 +52,7 @@ saturn_log_banner "SATURN_BATCH"
 echo "SATURN_BATCH: mode=script (python ${NOTEBOOK})"
 echo "SATURN_BATCH: SLURM_JOB_ID=${SLURM_JOB_ID:-local}"
 echo "SATURN_BATCH: SATURN_STEP=${SATURN_STEP:-batch}"
+echo "SATURN_BATCH: PROJECT_DIR=${PROJECT_DIR}"
 echo "SATURN_BATCH: NOTEBOOK=${NOTEBOOK}"
 echo "SATURN_BATCH: WORKING_DIR=${WORKING_DIR}"
 echo "SATURN_BATCH: HARMONIZED_DIR=${HARMONIZED_DIR}"
