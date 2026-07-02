@@ -90,29 +90,35 @@ Defaults assume harmonized outputs live under `outputs/harmonized/` in this repo
 
 ### 5. Run
 
-**Interactive notebook:**
+| Use case | Command |
+|----------|---------|
+| Local interactive dev | `marimo edit impac_tb_saturn.py` |
+| HPC interactive (SSH tunnel) | `bash submit.sh` |
+| HPC batch (headless) | `bash submit_run.sh` |
+| Dry run (no training) | `SATURN_DRY_RUN=1 python impac_tb_saturn.py` |
 
-```bash
-marimo edit impac_tb_saturn.py
-```
+**Batch = `python notebook.py`. Interactive = `marimo edit`. Dashboard = `marimo run`.**
 
-**Headless / batch:**
-
-```bash
-marimo run impac_tb_saturn.py
-```
-
-**Validate inputs without training:**
-
-```bash
-SATURN_DRY_RUN=1 marimo run impac_tb_saturn.py
-```
+`submit_run.sh` runs `python impac_tb_saturn.py` inside the SLURM job (marimo script mode). Do not use `marimo run` for scheduled jobs — it starts a read-only web app and blocks until something opens the URL.
 
 **Module smoke test** (label resolution + species map):
 
 ```bash
 python smoke_check.py
 ```
+
+#### HPC / SLURM
+
+- [`submit_run.sh`](submit_run.sh) — headless batch (`python impac_tb_saturn.py`)
+- [`submit.sh`](submit.sh) — interactive only (`marimo edit --headless` + SSH port forward)
+
+Run `bash submit_run.sh` or `bash submit.sh` from the repo (not raw `sbatch`) so each job creates a local `logs/` directory and writes annotated files:
+
+`logs/<step>-<YYYYMMDD-HHMMSS>-<jobid>.{out,err}`
+
+Examples: `logs/batch-20250702-143022-12345.out`, `logs/interactive-20250702-150011-12346.out`.
+
+A successful batch log shows `SATURN_BATCH:` startup lines and `SATURN_IMPACTB:` progress, then artifacts under `$WORKING_DIR/model_outputs/` (including `run_summary.json`). If the log shows `URL: http://localhost:...`, the job used `marimo run` by mistake and likely produced no outputs.
 
 ## Environment variables
 

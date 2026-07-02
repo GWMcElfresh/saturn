@@ -22,7 +22,7 @@ def _(mo):
 
     **Protein embeddings** (one-time): `curl -L http://snap.stanford.edu/saturn/data/protein_embeddings.tar.gz | tar -xz -C data/`
 
-    **Dry run** (skip training): `SATURN_DRY_RUN=1 marimo run impac_tb_saturn.py`
+    **Dry run** (skip training): `SATURN_DRY_RUN=1 python impac_tb_saturn.py`
     """)
     return
 
