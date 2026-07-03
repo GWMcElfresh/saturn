@@ -39,12 +39,13 @@ export CUDA_VISIBLE_DEVICES="${CUDA_VISIBLE_DEVICES:-0}"
 cd "${PROJECT_DIR}"
 mkdir -p "${WORKING_DIR}"
 
-# Activate Python environment (uv sync in PROJECT_DIR: .venv)
+# Sync and activate Python environment (.venv from uv.lock)
+saturn_sync_venv "${PROJECT_DIR}" || exit 1
 if [[ -f "${VENV_DIR}/bin/activate" ]]; then
   # shellcheck disable=SC1091
   source "${VENV_DIR}/bin/activate"
 else
-  echo "ERROR: No Python venv found at ${VENV_DIR}. Run: cd ${PROJECT_DIR} && uv sync" >&2
+  echo "ERROR: No Python venv found at ${VENV_DIR} after uv sync." >&2
   exit 1
 fi
 

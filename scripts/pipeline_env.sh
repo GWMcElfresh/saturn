@@ -51,3 +51,19 @@ saturn_log_banner() {
     echo "${prefix}: err=${LOG_DIR}/${SATURN_STEP}-${SUBMIT_TIMESTAMP}-${SLURM_JOB_ID}.err"
   fi
 }
+
+# Install/update .venv from pyproject.toml + uv.lock before each job run.
+saturn_sync_venv() {
+  local project_dir="${1:-${PROJECT_DIR}}"
+
+  if ! command -v uv >/dev/null 2>&1; then
+    echo "ERROR: uv not found on PATH. Install uv or add it to PATH before submitting jobs." >&2
+    return 1
+  fi
+
+  echo "SATURN: syncing Python environment (uv sync) in ${project_dir}..."
+  (cd "${project_dir}" && uv sync) || {
+    echo "ERROR: uv sync failed in ${project_dir}" >&2
+    return 1
+  }
+}
