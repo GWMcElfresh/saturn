@@ -4,16 +4,23 @@
 from __future__ import annotations
 
 import sys
+import time
 from pathlib import Path
 
 import anndata as ad
 import numpy as np
 import pandas as pd
+import pickle
 
 SATURN_ROOT = Path(__file__).resolve().parent
 sys.path.insert(0, str(SATURN_ROOT))
 
 from label_resolve import ResolveLabelColumn, _find_cluster_column  # noqa: E402
+from saturn_exports import (  # noqa: E402
+    export_macrogene_weights_tsv,
+    find_genes_to_macrogenes_pkl,
+    find_integrated_h5ad,
+)
 from species_map import (  # noqa: E402
     BuildInDataCsv,
     ProteinEmbeddingsDownloadCommand,
@@ -79,10 +86,62 @@ def test_build_in_data_csv(tmp: Path | None = None) -> None:
     assert list(df.index) == species
 
 
+def test_find_integrated_h5ad(tmp: Path | None = None) -> None:
+    tmp = tmp or SATURN_ROOT / "work" / "smoke_exports"
+    results = tmp / "saturn_results"
+    results.mkdir(parents=True, exist_ok=True)
+    (results / "run_pretrain.h5ad").write_text("stub")
+    (results / "run_ep_5.h5ad").write_text("stub")
+    final = results / "run.h5ad"
+    final.write_text("stub")
+    assert find_integrated_h5ad(tmp) == final
+
+
+def test_find_integrated_h5ad_prefers_newest(tmp: Path | None = None) -> None:
+    tmp = tmp or SATURN_ROOT / "work" / "smoke_exports_newest"
+    results = tmp / "saturn_results"
+    results.mkdir(parents=True, exist_ok=True)
+    older = results / "aaa_run.h5ad"
+    newer = results / "zzz_run.h5ad"
+    older.write_text("stub")
+    newer.write_text("stub")
+    time.sleep(0.05)
+    newer.write_text("stub2")
+    assert find_integrated_h5ad(tmp) == newer
+
+
+def test_export_macrogene_weights_tsv(tmp: Path | None = None) -> None:
+    tmp = tmp or SATURN_ROOT / "work" / "smoke_exports"
+    tmp.mkdir(parents=True, exist_ok=True)
+    pkl_path = tmp / "weights.pkl"
+    out_path = tmp / "macrogene_weights.tsv"
+    with open(pkl_path, "wb") as f:
+        pickle.dump({"human_CD4": np.array([1.0, 2.0]), "mouse_Gapdh": np.array([3.0])}, f)
+    export_macrogene_weights_tsv(pkl_path, out_path)
+    df = pd.read_csv(out_path, sep="\t")
+    assert list(df.columns) == ["gene", "species", "macrogene", "weight"]
+    assert len(df) == 3
+    assert set(df["species"]) == {"human", "mouse"}
+
+
+def test_find_genes_to_macrogenes_pkl(tmp: Path | None = None) -> None:
+    tmp = tmp or SATURN_ROOT / "work" / "smoke_exports_pkl"
+    results = tmp / "saturn_results"
+    results.mkdir(parents=True, exist_ok=True)
+    (results / "run.h5ad").write_text("stub")
+    pkl = results / "run_genes_to_macrogenes.pkl"
+    pkl.write_text("stub")
+    assert find_genes_to_macrogenes_pkl(tmp) == pkl
+
+
 if __name__ == "__main__":
     test_cell_type_detection()
     test_cluster_resolution_picker()
     test_compute_fallback()
     test_species_map()
     test_build_in_data_csv()
+    test_find_integrated_h5ad()
+    test_find_integrated_h5ad_prefers_newest()
+    test_export_macrogene_weights_tsv()
+    test_find_genes_to_macrogenes_pkl()
     print("saturn smoke_check: OK")

@@ -20,6 +20,7 @@ saturn_slurm_launch batch "${PROJECT_DIR}/submit_run.sh"
 NOTEBOOK="${NOTEBOOK:-impac_tb_saturn.py}"
 WORKING_DIR="${WORKING_DIR:-/home/exacloud/gscratch/prime-seq/Bimber/GW/scModal_ImpacTB/saturn_impac_tb}"
 HARMONIZED_DIR="${HARMONIZED_DIR:-/home/exacloud/gscratch/prime-seq/Bimber/GW/scModal_ImpacTB/outputs/harmonized/harmonized_outputs/}"
+SATURN_OUTPUT_DIR="${SATURN_OUTPUT_DIR:-./saturn_outputs}"
 VENV_DIR="${VENV_DIR:-${PROJECT_DIR}/.venv}"
 
 # Writable temp: compute-node scratch when available, else project gscratch
@@ -31,13 +32,18 @@ fi
 mkdir -p -m 700 "${tmpdir}/tmp"
 
 export TMPDIR="${tmpdir}/tmp"
-export WORKING_DIR HARMONIZED_DIR
+export WORKING_DIR HARMONIZED_DIR SATURN_OUTPUT_DIR
 export OMP_NUM_THREADS="${SLURM_CPUS_PER_TASK:-${SLURM_JOB_CPUS_PER_NODE:-8}}"
 export MPLBACKEND=Agg
 export CUDA_VISIBLE_DEVICES="${CUDA_VISIBLE_DEVICES:-0}"
 
 cd "${PROJECT_DIR}"
 mkdir -p "${WORKING_DIR}"
+if [[ "${SATURN_OUTPUT_DIR}" == /* ]]; then
+  mkdir -p "${SATURN_OUTPUT_DIR}"
+else
+  mkdir -p "${WORKING_DIR}/${SATURN_OUTPUT_DIR#./}"
+fi
 
 # Sync and activate Python environment (.venv from uv.lock)
 saturn_sync_venv "${PROJECT_DIR}" || exit 1
@@ -56,7 +62,9 @@ echo "SATURN_BATCH: SATURN_STEP=${SATURN_STEP:-batch}"
 echo "SATURN_BATCH: PROJECT_DIR=${PROJECT_DIR}"
 echo "SATURN_BATCH: NOTEBOOK=${NOTEBOOK}"
 echo "SATURN_BATCH: WORKING_DIR=${WORKING_DIR}"
+echo "SATURN_BATCH: SATURN_OUTPUT_DIR=${SATURN_OUTPUT_DIR}"
 echo "SATURN_BATCH: HARMONIZED_DIR=${HARMONIZED_DIR}"
-echo "SATURN_BATCH: expect SATURN_IMPACTB: lines in log; artifacts under \${WORKING_DIR}/model_outputs/"
+echo "SATURN_BATCH: expect SATURN_IMPACTB: lines in log; artifacts under resolved SATURN_OUTPUT_DIR"
+echo "SATURN_BATCH: post-train outputs: umap_species.png cell_clusters.tsv macrogene_weights.tsv"
 
 exec python "${NOTEBOOK}"

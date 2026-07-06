@@ -2,6 +2,7 @@ submit.sh
 data/protein_embeddings/
 **/cache/
 **/model_outputs/
+**/saturn_outputs/
 **/__marimo__/
 work/
 .venv/

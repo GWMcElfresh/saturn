@@ -59,6 +59,7 @@ only-include = [
     "impactb_preprocess.py",
     "label_resolve.py",
     "species_map.py",
+    "saturn_exports.py",
     "impac_tb_saturn.py",
     "smoke_check.py",
 ]

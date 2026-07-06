@@ -158,6 +158,7 @@ def _(os, pathlib):
         "True",
     }
     CT_MAP_PATH = os.environ.get("CT_MAP_PATH", "").strip() or None
+    SATURN_OUTPUT_DIR = os.environ.get("SATURN_OUTPUT_DIR", "./saturn_outputs").strip()
 
     return (
         CACHE_SUBDIR,
@@ -176,6 +177,7 @@ def _(os, pathlib):
         SATURN_EMBEDDING_MODEL,
         SATURN_EPOCHS,
         SATURN_NUM_MACROGENES,
+        SATURN_OUTPUT_DIR,
         SATURN_PRETRAIN_BATCH_SIZE,
         SATURN_PRETRAIN_EPOCHS,
         SATURN_ROOT,
@@ -218,6 +220,12 @@ def _(SATURN_ROOT, VENDOR_SATURN):
 
     from impactb_preprocess import build_or_load_cache, resolve_expression_matrix
     from label_resolve import ResolveLabelColumn
+    from saturn_exports import (
+        export_cell_clusters_tsv,
+        export_macrogene_weights_tsv,
+        find_genes_to_macrogenes_pkl,
+        find_integrated_h5ad,
+    )
     from species_map import (
         BuildInDataCsv,
         ProteinEmbeddingsDownloadCommand,
@@ -234,6 +242,10 @@ def _(SATURN_ROOT, VENDOR_SATURN):
         RequiredEmbeddingPaths,
         ResolveLabelColumn,
         build_or_load_cache,
+        export_cell_clusters_tsv,
+        export_macrogene_weights_tsv,
+        find_genes_to_macrogenes_pkl,
+        find_integrated_h5ad,
         json,
         np,
         pd,
@@ -253,16 +265,22 @@ def _(mo):
     ## Output directories
 
     Create `cache/` (preprocessed AnnData, SATURN input h5ads) beside this notebook and
-    `model_outputs/` (training artifacts, plots, run summary) under `WORKING_DIR`.
+    SATURN outputs under `SATURN_OUTPUT_DIR` (default `./saturn_outputs` under `WORKING_DIR`).
+    Override with env `SATURN_OUTPUT_DIR` (absolute or relative to `WORKING_DIR`).
     """)
     return
 
 
 @app.cell
-def _(CACHE_SUBDIR, SATURN_ROOT, WORKING_DIR):
+def _(CACHE_SUBDIR, SATURN_OUTPUT_DIR, SATURN_ROOT, WORKING_DIR, pathlib):
     cache_dir = SATURN_ROOT / CACHE_SUBDIR
     cache_dir.mkdir(parents=True, exist_ok=True)
-    out_dir = WORKING_DIR / "model_outputs"
+    _output = pathlib.Path(SATURN_OUTPUT_DIR)
+    out_dir = (
+        _output.resolve()
+        if _output.is_absolute()
+        else (WORKING_DIR / _output).resolve()
+    )
     out_dir.mkdir(parents=True, exist_ok=True)
     saturn_inputs_dir = cache_dir / "saturn_inputs"
     saturn_inputs_dir.mkdir(parents=True, exist_ok=True)
@@ -493,7 +511,7 @@ def _(mo):
 
     Launch vendor `train-saturn.py` with macrogene count, pretrain/fine-tune epochs,
     batch sizes, and reference-species label column. Skipped when `SATURN_DRY_RUN=1`.
-    Outputs land in `model_outputs/`.
+    Outputs land in `SATURN_OUTPUT_DIR` (default `./saturn_outputs`).
     """)
     return
 
@@ -510,6 +528,7 @@ def _(
     SATURN_PRETRAIN_EPOCHS,
     SATURN_SEED,
     VENDOR_SATURN,
+    find_integrated_h5ad,
     in_data_path,
     in_data_label_cols,
     n_genes_union,
@@ -518,22 +537,24 @@ def _(
     subprocess,
     sys,
 ):
-    run_name = None
+    integrated_path = None
     train_cmd = []
     if not SATURN_DRY_RUN:
         _train_script = VENDOR_SATURN / "train-saturn.py"
         if not _train_script.exists():
             raise RuntimeError(f"SATURN vendor not found: {_train_script}")
         _ref_label_col = in_data_label_cols[species_order[0]]
+        _work_dir = f"{out_dir.resolve()}/"
+        (out_dir / "tboard_log").mkdir(parents=True, exist_ok=True)
         train_cmd = [
             sys.executable,
             str(_train_script),
             "--in_data",
             str(in_data_path),
             "--work_dir",
-            str(out_dir),
+            _work_dir,
             "--log_dir",
-            str(out_dir / "tboard_log"),
+            "tboard_log/",
             "--embedding_model",
             SATURN_EMBEDDING_MODEL,
             "--hv_genes",
@@ -561,40 +582,81 @@ def _(
         _result = subprocess.run(train_cmd, check=False, cwd=str(VENDOR_SATURN))
         if _result.returncode != 0:
             raise RuntimeError(f"train-saturn.py failed with code {_result.returncode}")
-        _h5ads = sorted(out_dir.glob("*.h5ad"))
-        run_name = _h5ads[0] if _h5ads else None
-    return run_name, train_cmd
+        integrated_path = find_integrated_h5ad(out_dir)
+        if integrated_path is None:
+            raise RuntimeError(
+                f"No integrated h5ad found under {out_dir / 'saturn_results'} "
+                "after train-saturn.py completed"
+            )
+        print(f"SATURN_IMPACTB: integrated h5ad = {integrated_path}", flush=True)
+    return integrated_path, train_cmd
 
 
 @app.cell(hide_code=True)
 def _(mo):
     mo.md(r"""
-    ## UMAP visualization
+    ## Post-training exports
 
-    After training, load the integrated h5ad from `model_outputs/`, compute UMAP if needed,
-    and save species- and label-colored plots as PNGs. Skipped in dry-run mode.
+    After training, load the integrated h5ad from `saturn_results/` under the output dir,
+    run Leiden on the SATURN embedding, save `cell_clusters.tsv` and `macrogene_weights.tsv`,
+    and write `umap_species.png`. Skipped in dry-run mode.
     """)
     return
 
 
 @app.cell
-def _(SATURN_DRY_RUN, out_dir, plt, run_name, sc):
+def _(
+    LEIDEN_RESOLUTION,
+    SATURN_DRY_RUN,
+    TRAINING_RANDOM_SEED,
+    export_cell_clusters_tsv,
+    export_macrogene_weights_tsv,
+    find_genes_to_macrogenes_pkl,
+    integrated_path,
+    out_dir,
+    plt,
+    sc,
+):
     integrated = None
-    if not SATURN_DRY_RUN and run_name is not None and run_name.exists():
-        integrated = sc.read_h5ad(run_name)
+    umap_species_png = None
+    cell_clusters_tsv = None
+    macrogene_weights_tsv = None
+    if not SATURN_DRY_RUN and integrated_path is not None and integrated_path.exists():
+        print("SATURN_IMPACTB: post-train exports starting", flush=True)
+        integrated = sc.read_h5ad(integrated_path)
+        sc.pp.neighbors(integrated, use_rep="X", n_neighbors=15)
+        sc.tl.leiden(
+            integrated,
+            resolution=LEIDEN_RESOLUTION,
+            random_state=TRAINING_RANDOM_SEED,
+            key_added="leiden",
+        )
         if "X_umap" not in integrated.obsm:
-            sc.pp.neighbors(integrated, use_rep="X", n_neighbors=15)
             sc.tl.umap(integrated)
+        umap_species_png = out_dir / "umap_species.png"
         _fig, _ax = plt.subplots(figsize=(6, 5))
         sc.pl.umap(integrated, color="species", show=False, ax=_ax)
-        _fig.savefig(out_dir / "umap_species.png", dpi=120, bbox_inches="tight")
+        _fig.savefig(umap_species_png, dpi=120, bbox_inches="tight")
         plt.close(_fig)
-        if "labels2" in integrated.obs.columns:
-            _fig, _ax = plt.subplots(figsize=(6, 5))
-            sc.pl.umap(integrated, color="labels2", show=False, ax=_ax)
-            _fig.savefig(out_dir / "umap_labels.png", dpi=120, bbox_inches="tight")
-            plt.close(_fig)
-    return (integrated,)
+        print(f"SATURN_IMPACTB: wrote {umap_species_png}", flush=True)
+        cell_clusters_tsv = out_dir / "cell_clusters.tsv"
+        export_cell_clusters_tsv(integrated, cell_clusters_tsv)
+        print(f"SATURN_IMPACTB: wrote {cell_clusters_tsv}", flush=True)
+        _pkl = find_genes_to_macrogenes_pkl(out_dir)
+        if _pkl is None:
+            raise RuntimeError(
+                f"No genes_to_macrogenes PKL found for {integrated_path.name} "
+                f"under {out_dir / 'saturn_results'}"
+            )
+        macrogene_weights_tsv = out_dir / "macrogene_weights.tsv"
+        export_macrogene_weights_tsv(_pkl, macrogene_weights_tsv)
+        print(f"SATURN_IMPACTB: wrote {macrogene_weights_tsv}", flush=True)
+    return (
+        cell_clusters_tsv,
+        integrated,
+        macrogene_weights_tsv,
+        umap_species_png,
+    )
 
 
 @app.cell(hide_code=True)
@@ -614,11 +676,13 @@ def _(
     HARMONIZED_DIR,
     SATURN_DRY_RUN,
     cache_result,
+    cell_clusters_tsv,
     expr_sources,
     integrated,
     json,
     label_cols,
     label_sources,
+    macrogene_weights_tsv,
     manifest,
     n_genes_union,
     out_dir,
@@ -626,6 +690,7 @@ def _(
     shutil,
     species_order,
     train_cmd,
+    umap_species_png,
 ):
     shutil.copy2(
         HARMONIZED_DIR / "integration_manifest.csv",
@@ -646,8 +711,14 @@ def _(
         "label_sources": label_sources,
         "expr_sources": expr_sources,
         "saturn_dry_run": SATURN_DRY_RUN,
+        "saturn_output_dir": str(out_dir),
         "train_cmd": train_cmd,
         "integrated_path": str(integrated.filename) if integrated is not None else None,
+        "umap_species_png": str(umap_species_png) if umap_species_png else None,
+        "cell_clusters_tsv": str(cell_clusters_tsv) if cell_clusters_tsv else None,
+        "macrogene_weights_tsv": (
+            str(macrogene_weights_tsv) if macrogene_weights_tsv else None
+        ),
     }
     (out_dir / "run_summary.json").write_text(json.dumps(_summary, indent=2))
     pd.DataFrame([_summary]).to_csv(out_dir / "run_summary.csv", index=False)
