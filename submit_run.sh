@@ -3,7 +3,7 @@
 #SBATCH --signal=USR2
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=4
-#SBATCH --mem=512GB
+#SBATCH --mem=200GB
 #SBATCH --partition=gpu
 #SBATCH --gres=gpu:1
 
