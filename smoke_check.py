@@ -62,9 +62,11 @@ def test_compute_fallback() -> None:
 
 def test_species_map() -> None:
     assert ResolveEmbeddingKey("macaque") == "macaca_mulatta"
-    emb_dir = SATURN_ROOT / "data" / "protein_embeddings"
-    path = ResolveEmbeddingPath("human", emb_dir)
-    assert path.name.endswith("ESM1b.pt")
+    emb_dir = SATURN_ROOT / "data" / "protein_embeddings_export" / "ESM2"
+    path = ResolveEmbeddingPath("human", emb_dir, embedding_model="ESM2")
+    assert path.name.endswith("ESM2.pt")
+    path_esm1b = ResolveEmbeddingPath("human", emb_dir, embedding_model="ESM1b")
+    assert path_esm1b.name.endswith("ESM1b.pt")
     cmd = ProteinEmbeddingsDownloadCommand(emb_dir)
     assert "protein_embeddings.tar.gz" in cmd
 

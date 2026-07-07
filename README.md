@@ -53,23 +53,30 @@ pip install -e ".[gpu]"
 
 PyTorch CUDA 12.4 wheels are configured in `pyproject.toml` via the `pytorch-cu124` index. On CPU-only machines, install torch from [pytorch.org](https://pytorch.org) before the rest of the stack.
 
-### 3. Download protein embeddings
+### 3. Protein embeddings
 
-SATURN needs per-species ESM protein embedding files (`.pt`). Stanford hosts a precomputed bundle:
+SATURN needs per-species ESM protein embedding files (`.pt`). On HPC, `submit_run.sh` defaults to **ESM2** under `data/protein_embeddings_export/ESM2/`. Stanford hosts a precomputed bundle:
 
 ```bash
 mkdir -p data
 curl -L http://snap.stanford.edu/saturn/data/protein_embeddings.tar.gz | tar -xz -C data/
-# Files land in data/protein_embeddings/
+# Bundle layout: data/protein_embeddings_export/{ESM1b,ESM2,protXL}/*.pt
 ```
 
-ImpacTB uses:
+ImpacTB uses (ESM2 default):
 
 | Species in manifest | Embedding file |
 |---------------------|----------------|
-| `human` | `Homo_sapiens.GRCh38.gene_symbol_to_embedding_ESM1b.pt` |
-| `macaque` | `Macaca_mulatta.Mmul_10.gene_symbol_to_embedding_ESM1b.pt` |
-| `mouse` | `Mus_musculus.GRCm39.gene_symbol_to_embedding_ESM1b.pt` |
+| `human` | `Homo_sapiens.GRCh38.gene_symbol_to_embedding_ESM2.pt` |
+| `macaque` | `Macaca_mulatta.Mmul_10.gene_symbol_to_embedding_ESM2.pt` |
+| `mouse` | `Mus_musculus.GRCm39.gene_symbol_to_embedding_ESM2.pt` |
+
+Override model or directory if needed:
+
+```bash
+export SATURN_EMBEDDING_MODEL=ESM1b
+export EMBEDDINGS_DIR=/path/to/protein_embeddings_export/ESM1b
+```
 
 Override macaque subspecies if needed:
 
@@ -147,6 +154,7 @@ A successful batch log shows `SATURN_BATCH:` startup lines and `SATURN_IMPACTB:`
 | `HARMONIZED_DIR` | `./outputs/harmonized/harmonized_outputs` | Directory with `integration_manifest.csv` |
 | `WORKING_DIR` | `${PROJECT_DIR}/work` (batch) | Temp files and scratch cwd |
 | `SATURN_OUTPUT_DIR` | `${PROJECT_DIR}/saturn_outputs` (batch) | SATURN training outputs |
+| `EMBEDDINGS_DIR` | `${PROJECT_DIR}/data/protein_embeddings_export/ESM2` (batch) | Per-species `.pt` embedding files |
 | `CACHE_SUBDIR` | `cache` | Preprocessed AnnData cache (under saturn root, not `WORKING_DIR`) |
 | `MAX_CELLS_PER_SPECIES` | `0` (auto = min species) | Downsample cap per species |
 | `N_TOP_GENES_PER_SPECIES` | `3000` | HVG count before union |
@@ -174,7 +182,7 @@ Auto-detection order: cell-type columns → existing cluster columns (resolution
 | `SATURN_BATCH_SIZE` | `1024` | Training batch size |
 | `SATURN_PRETRAIN_BATCH_SIZE` | `1024` | Pretrain batch size |
 | `SATURN_NUM_MACROGENES` | `2000` | Macrogene count |
-| `SATURN_EMBEDDING_MODEL` | `ESM1b` | Protein embedding model |
+| `SATURN_EMBEDDING_MODEL` | `ESM2` | Protein embedding model (`ESM1b`, `ESM2`, …) |
 | `SATURN_DEVICE_NUM` | `0` | CUDA device index |
 | `SATURN_DRY_RUN` | off | `1` = skip `train-saturn.py` |
 | `MACAQUE_EMBEDDING_SPECIES` | `macaca_mulatta` | Macaque embedding key |
@@ -191,7 +199,7 @@ saturn/
   pyproject.toml
   vendor/SATURN/          # vendored snap-stanford/SATURN (see VENDOR_SHA)
   data/
-    protein_embeddings/   # downloaded .pt files (not in git)
+    protein_embeddings_export/  # downloaded .pt files by model (ESM2/, ESM1b/, …)
     in_data.csv           # generated at runtime
 ```
 

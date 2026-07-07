@@ -7,7 +7,7 @@ from pathlib import Path
 
 import pandas as pd
 
-# ESM1b filenames from snap.stanford.edu/saturn protein_embeddings bundle
+# Filenames from snap.stanford.edu/saturn protein_embeddings bundle (per-model subdirs).
 _EMBEDDING_FILES: dict[str, dict[str, str]] = {
     "ESM1b": {
         "human": "Homo_sapiens.GRCh38.gene_symbol_to_embedding_ESM1b.pt",
@@ -16,7 +16,15 @@ _EMBEDDING_FILES: dict[str, dict[str, str]] = {
         "macaca_fascicularis": (
             "Macaca_fascicularis.Macaca_fascicularis_6.0.gene_symbol_to_embedding_ESM1b.pt"
         ),
-    }
+    },
+    "ESM2": {
+        "human": "Homo_sapiens.GRCh38.gene_symbol_to_embedding_ESM2.pt",
+        "mouse": "Mus_musculus.GRCm39.gene_symbol_to_embedding_ESM2.pt",
+        "macaca_mulatta": "Macaca_mulatta.Mmul_10.gene_symbol_to_embedding_ESM2.pt",
+        "macaca_fascicularis": (
+            "Macaca_fascicularis.Macaca_fascicularis_6.0.gene_symbol_to_embedding_ESM2.pt"
+        ),
+    },
 }
 
 _MANIFEST_TO_EMBEDDING_KEY: dict[str, str] = {
@@ -39,7 +47,7 @@ def ResolveEmbeddingKey(manifest_species: str) -> str:
 def ResolveEmbeddingPath(
     manifest_species: str,
     embeddings_dir: Path,
-    embedding_model: str = "ESM1b",
+    embedding_model: str = "ESM2",
 ) -> Path:
     """Return path to protein embedding .pt for a manifest species."""
     key = ResolveEmbeddingKey(manifest_species)
@@ -55,7 +63,7 @@ def ResolveEmbeddingPath(
 def RequiredEmbeddingPaths(
     species_order: list[str],
     embeddings_dir: Path,
-    embedding_model: str = "ESM1b",
+    embedding_model: str = "ESM2",
 ) -> dict[str, Path]:
     """Return manifest_species → embedding path for all species."""
     return {

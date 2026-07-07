@@ -1,5 +1,6 @@
 submit.sh
 data/protein_embeddings/
+data/protein_embeddings_export/
 **/cache/
 **/model_outputs/
 **/saturn_outputs/

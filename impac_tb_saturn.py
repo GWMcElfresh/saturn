@@ -20,7 +20,7 @@ def _(mo):
     using the same preprocessing as `scMODAL_ImpacTB_HVGDownsample` (subject-balanced downsample to min species count,
     HVG union `seurat_v3`). Labels: cell type → existing clusters (resolution ≈ 0.5) → on-the-fly Leiden.
 
-    **Protein embeddings** (one-time): `curl -L http://snap.stanford.edu/saturn/data/protein_embeddings.tar.gz | tar -xz -C data/`
+    **Protein embeddings** (one-time): download the Stanford bundle into `data/protein_embeddings_export/` (ESM2 subfolder used by default).
 
     **Dry run** (skip training): `SATURN_DRY_RUN=1 python impac_tb_saturn.py`
     """)
@@ -68,17 +68,6 @@ def _():
         default = _SATURN_ROOT / "work"
         default.mkdir(parents=True, exist_ok=True)
         return default.resolve()
-        for key in ("SLURM_TMPDIR", "TMPDIR", "TMP"):
-            val = os.environ.get(key, "").strip()
-            if not val:
-                continue
-            candidate = pathlib.Path(val).expanduser().resolve()
-            if candidate.exists() and not _is_under_home(candidate):
-                return (candidate / "saturn_work").resolve()
-        # ponytail: local dev fallback when no HPC scratch is available
-        local = pathlib.Path(__file__).resolve().parent / "work"
-        local.mkdir(parents=True, exist_ok=True)
-        return local.resolve()
 
     WORKING_DIR = _resolve_working_dir()
     TMP_ROOT = WORKING_DIR / "tmp"
@@ -118,7 +107,13 @@ def _(mo):
 def _(os, pathlib):
     SATURN_ROOT = pathlib.Path(__file__).resolve().parent
     VENDOR_SATURN = SATURN_ROOT / "vendor" / "SATURN"
-    EMBEDDINGS_DIR = SATURN_ROOT / "data" / "protein_embeddings"
+    SATURN_EMBEDDING_MODEL = os.environ.get("SATURN_EMBEDDING_MODEL", "ESM2")
+    _embeddings_default = (
+        SATURN_ROOT / "data" / "protein_embeddings_export" / SATURN_EMBEDDING_MODEL
+    )
+    EMBEDDINGS_DIR = pathlib.Path(
+        os.environ.get("EMBEDDINGS_DIR", str(_embeddings_default))
+    )
 
     HARMONIZED_DIR = pathlib.Path(
         os.environ.get(
@@ -148,7 +143,6 @@ def _(os, pathlib):
     SATURN_PRETRAIN_BATCH_SIZE = int(
         os.environ.get("SATURN_PRETRAIN_BATCH_SIZE", str(SATURN_BATCH_SIZE))
     )
-    SATURN_EMBEDDING_MODEL = os.environ.get("SATURN_EMBEDDING_MODEL", "ESM1b")
     SATURN_DEVICE_NUM = int(os.environ.get("SATURN_DEVICE_NUM", "0"))
     SATURN_DRY_RUN = os.environ.get("SATURN_DRY_RUN", "").strip() in {
         "1",
@@ -441,8 +435,8 @@ def _(mo):
     mo.md(r"""
     ## Protein embeddings
 
-    Verify per-species ESM embedding `.pt` files exist under `data/protein_embeddings/`.
-    Stops with a download command if any are missing. In dry-run mode, reports success
+    Verify per-species ESM embedding `.pt` files under `EMBEDDINGS_DIR` (default
+    `data/protein_embeddings_export/ESM2/`). Stops with a download command if any are missing. In dry-run mode, reports success
     without proceeding to training.
     """)
     return
@@ -461,14 +455,28 @@ def _(
     embedding_paths = RequiredEmbeddingPaths(
         species_order, EMBEDDINGS_DIR, SATURN_EMBEDDING_MODEL
     )
+    print(
+        f"SATURN_IMPACTB: embedding_model={SATURN_EMBEDDING_MODEL} "
+        f"embeddings_dir={EMBEDDINGS_DIR}",
+        flush=True,
+    )
+    for _species, _path in embedding_paths.items():
+        print(f"SATURN_IMPACTB: embedding species={_species} path={_path}", flush=True)
     missing = [str(_p) for _p in embedding_paths.values() if not _p.exists()]
     if missing:
+        print(
+            f"SATURN_IMPACTB: ERROR missing protein embeddings ({len(missing)} files):",
+            flush=True,
+        )
+        for _missing_path in missing:
+            print(f"  {_missing_path}", flush=True)
         _cmd = ProteinEmbeddingsDownloadCommand(EMBEDDINGS_DIR)
         mo.stop(
             mo.md(
                 f"**Missing protein embeddings** ({len(missing)} files).\n\n"
                 f"```bash\n{_cmd}\n```\n\n"
-                "Or set paths via embedding_path in in_data.csv."
+                "Or set `EMBEDDINGS_DIR` / `SATURN_EMBEDDING_MODEL`, "
+                "or paths via embedding_path in in_data.csv."
             )
         )
     if SATURN_DRY_RUN:

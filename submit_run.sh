@@ -21,6 +21,8 @@ NOTEBOOK="${NOTEBOOK:-impac_tb_saturn.py}"
 WORKING_DIR="${WORKING_DIR:-${PROJECT_DIR}/work}"
 HARMONIZED_DIR="${HARMONIZED_DIR:-${PROJECT_DIR}/outputs/harmonized/harmonized_outputs}"
 SATURN_OUTPUT_DIR="${SATURN_OUTPUT_DIR:-${PROJECT_DIR}/saturn_outputs}"
+EMBEDDINGS_DIR="${EMBEDDINGS_DIR:-${PROJECT_DIR}/data/protein_embeddings_export/ESM2}"
+SATURN_EMBEDDING_MODEL="${SATURN_EMBEDDING_MODEL:-ESM2}"
 VENV_DIR="${VENV_DIR:-${PROJECT_DIR}/.venv}"
 
 # Writable temp: compute-node scratch when available, else project gscratch
@@ -32,7 +34,7 @@ fi
 mkdir -p -m 700 "${tmpdir}/tmp"
 
 export TMPDIR="${tmpdir}/tmp"
-export WORKING_DIR HARMONIZED_DIR SATURN_OUTPUT_DIR
+export WORKING_DIR HARMONIZED_DIR SATURN_OUTPUT_DIR EMBEDDINGS_DIR SATURN_EMBEDDING_MODEL
 export OMP_NUM_THREADS="${SLURM_CPUS_PER_TASK:-${SLURM_JOB_CPUS_PER_NODE:-8}}"
 export MPLBACKEND=Agg
 export CUDA_VISIBLE_DEVICES="${CUDA_VISIBLE_DEVICES:-0}"
@@ -64,6 +66,8 @@ echo "SATURN_BATCH: NOTEBOOK=${NOTEBOOK}"
 echo "SATURN_BATCH: WORKING_DIR=${WORKING_DIR}"
 echo "SATURN_BATCH: SATURN_OUTPUT_DIR=${SATURN_OUTPUT_DIR}"
 echo "SATURN_BATCH: HARMONIZED_DIR=${HARMONIZED_DIR}"
+echo "SATURN_BATCH: EMBEDDINGS_DIR=${EMBEDDINGS_DIR}"
+echo "SATURN_BATCH: SATURN_EMBEDDING_MODEL=${SATURN_EMBEDDING_MODEL}"
 echo "SATURN_BATCH: expect SATURN_IMPACTB: lines in log; artifacts under resolved SATURN_OUTPUT_DIR"
 echo "SATURN_BATCH: post-train outputs: umap_species.png cell_clusters.tsv macrogene_weights.tsv"
 
