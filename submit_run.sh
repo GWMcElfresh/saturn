@@ -18,9 +18,9 @@ source "${PROJECT_DIR}/scripts/pipeline_env.sh"
 saturn_slurm_launch batch "${PROJECT_DIR}/submit_run.sh"
 
 NOTEBOOK="${NOTEBOOK:-impac_tb_saturn.py}"
-WORKING_DIR="${WORKING_DIR:-/home/exacloud/gscratch/prime-seq/Bimber/GW/scModal_ImpacTB/saturn_impac_tb}"
-HARMONIZED_DIR="${HARMONIZED_DIR:-/home/exacloud/gscratch/prime-seq/Bimber/GW/scModal_ImpacTB/outputs/harmonized/harmonized_outputs/}"
-SATURN_OUTPUT_DIR="${SATURN_OUTPUT_DIR:-./saturn_outputs}"
+WORKING_DIR="${WORKING_DIR:-${PROJECT_DIR}/work}"
+HARMONIZED_DIR="${HARMONIZED_DIR:-${PROJECT_DIR}/outputs/harmonized/harmonized_outputs}"
+SATURN_OUTPUT_DIR="${SATURN_OUTPUT_DIR:-${PROJECT_DIR}/saturn_outputs}"
 VENV_DIR="${VENV_DIR:-${PROJECT_DIR}/.venv}"
 
 # Writable temp: compute-node scratch when available, else project gscratch

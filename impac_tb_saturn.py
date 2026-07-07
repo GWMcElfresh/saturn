@@ -33,7 +33,7 @@ def _(mo):
     ## Working directory
 
     Resolve a writable scratch location for caches, model outputs, and temp files.
-    Priority: `WORKING_DIR` env var → Nextflow task dir → OHSU gscratch default →
+    Priority: `WORKING_DIR` env var → Nextflow task dir → repo `work/` →
     cluster `TMPDIR` → local `work/` beside this notebook. Also redirects matplotlib,
     Numba, and XDG caches away from `$HOME` (required on many HPC systems).
     """)
@@ -45,9 +45,7 @@ def _():
     import os
     import pathlib
 
-    _DEFAULT_SCRATCH = (
-        "/home/exacloud/gscratch/prime-seq/Bimber/GW/scModal_ImpacTB/saturn_impac_tb"
-    )
+    _SATURN_ROOT = pathlib.Path(__file__).resolve().parent
     _HOME = pathlib.Path.home()
 
     def _is_under_home(path: pathlib.Path) -> bool:
@@ -67,9 +65,9 @@ def _():
                 candidate = pathlib.Path(val).expanduser().resolve()
                 if not _is_under_home(candidate):
                     return candidate
-        default = pathlib.Path(_DEFAULT_SCRATCH)
-        if default.is_dir() or str(default).startswith("/home/exacloud/gscratch"):
-            return default.resolve()
+        default = _SATURN_ROOT / "work"
+        default.mkdir(parents=True, exist_ok=True)
+        return default.resolve()
         for key in ("SLURM_TMPDIR", "TMPDIR", "TMP"):
             val = os.environ.get(key, "").strip()
             if not val:
@@ -158,7 +156,9 @@ def _(os, pathlib):
         "True",
     }
     CT_MAP_PATH = os.environ.get("CT_MAP_PATH", "").strip() or None
-    SATURN_OUTPUT_DIR = os.environ.get("SATURN_OUTPUT_DIR", "./saturn_outputs").strip()
+    SATURN_OUTPUT_DIR = os.environ.get(
+        "SATURN_OUTPUT_DIR", str(SATURN_ROOT / "saturn_outputs")
+    ).strip()
 
     return (
         CACHE_SUBDIR,

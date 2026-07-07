@@ -83,10 +83,19 @@ Gene symbols in your `.h5ad` must appear in each species’ embedding dict. See 
 
 ```bash
 export HARMONIZED_DIR=/path/to/harmonized_outputs/   # optional; default: ./outputs/harmonized/harmonized_outputs
-export WORKING_DIR=/path/to/scratch/saturn_impac_tb   # must not be $HOME on HPC
+export WORKING_DIR=/path/to/scratch/work             # must not be $HOME on HPC
+export SATURN_OUTPUT_DIR=/path/to/saturn_outputs     # optional; default: ./saturn_outputs
 ```
 
 Defaults assume harmonized outputs live under `outputs/harmonized/` in this repo and preprocessing cache under `./cache/`. Override for other layouts or HPC scratch paths.
+
+**HPC data setup** (one-time on cluster): symlink harmonized upstream outputs into this repo:
+
+```bash
+mkdir -p /home/exacloud/gscratch/prime-seq/Bimber/GW/saturn/outputs/harmonized
+ln -sfn /home/exacloud/gscratch/prime-seq/Bimber/GW/scModal_ImpacTB/outputs/harmonized/harmonized_outputs \
+  /home/exacloud/gscratch/prime-seq/Bimber/GW/saturn/outputs/harmonized/harmonized_outputs
+```
 
 ### 5. Run
 
@@ -127,7 +136,7 @@ Launch scripts source [`scripts/pipeline_env.sh`](scripts/pipeline_env.sh) via `
 | `submit_run.sh` (batch) | 8 | 512 GB | 24 h |
 | `submit.sh` (interactive) | 4 | 128 GB | 8 h |
 
-A successful batch log shows `SATURN_BATCH:` startup lines and `SATURN_IMPACTB:` progress, then artifacts under `$WORKING_DIR/model_outputs/` (including `run_summary.json`). If the log shows `URL: http://localhost:...`, the job used `marimo run` by mistake and likely produced no outputs.
+A successful batch log shows `SATURN_BATCH:` startup lines and `SATURN_IMPACTB:` progress, then artifacts under `$SATURN_OUTPUT_DIR` (default `${PROJECT_DIR}/saturn_outputs`, including `run_summary.json`). If the log shows `URL: http://localhost:...`, the job used `marimo run` by mistake and likely produced no outputs.
 
 ## Environment variables
 
@@ -136,7 +145,8 @@ A successful batch log shows `SATURN_BATCH:` startup lines and `SATURN_IMPACTB:`
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `HARMONIZED_DIR` | `./outputs/harmonized/harmonized_outputs` | Directory with `integration_manifest.csv` |
-| `WORKING_DIR` | gscratch scratch path | Temp files and `model_outputs/` |
+| `WORKING_DIR` | `${PROJECT_DIR}/work` (batch) | Temp files and scratch cwd |
+| `SATURN_OUTPUT_DIR` | `${PROJECT_DIR}/saturn_outputs` (batch) | SATURN training outputs |
 | `CACHE_SUBDIR` | `cache` | Preprocessed AnnData cache (under saturn root, not `WORKING_DIR`) |
 | `MAX_CELLS_PER_SPECIES` | `0` (auto = min species) | Downsample cap per species |
 | `N_TOP_GENES_PER_SPECIES` | `3000` | HVG count before union |
@@ -192,9 +202,10 @@ Under `./cache/` (saturn project root):
 - `cache/downsampled_hvg/` — cached downsampled + HVG-subset AnnData
 - `cache/saturn_inputs/` — per-species h5ad for SATURN
 
-Under `$WORKING_DIR`:
+Under `$SATURN_OUTPUT_DIR` (default `./saturn_outputs` at repo root):
 
-- `model_outputs/` — SATURN run artifacts, UMAP plots, `run_summary.json`
+- `saturn_results/` — SATURN run artifacts
+- `umap_species.png`, `cell_clusters.tsv`, `macrogene_weights.tsv`, `run_summary.json`
 
 ## Upstream references
 
