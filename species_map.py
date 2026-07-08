@@ -7,23 +7,45 @@ from pathlib import Path
 
 import pandas as pd
 
-# Filenames from snap.stanford.edu/saturn protein_embeddings bundle (per-model subdirs).
-_EMBEDDING_FILES: dict[str, dict[str, str]] = {
+# Candidate filenames per species/model. First entry is the Stanford bundle layout
+# (protein_embeddings.tar.gz → protein_embeddings_export/{ESM1b,ESM2}/<key>_embedding.torch).
+# Later entries support legacy lab-internal .pt names.
+_EMBEDDING_CANDIDATES: dict[str, dict[str, list[str]]] = {
     "ESM1b": {
-        "human": "Homo_sapiens.GRCh38.gene_symbol_to_embedding_ESM1b.pt",
-        "mouse": "Mus_musculus.GRCm39.gene_symbol_to_embedding_ESM1b.pt",
-        "macaca_mulatta": "Macaca_mulatta.Mmul_10.gene_symbol_to_embedding_ESM1b.pt",
-        "macaca_fascicularis": (
-            "Macaca_fascicularis.Macaca_fascicularis_6.0.gene_symbol_to_embedding_ESM1b.pt"
-        ),
+        "human": [
+            "human_embedding.torch",
+            "Homo_sapiens.GRCh38.gene_symbol_to_embedding_ESM1b.pt",
+        ],
+        "mouse": [
+            "mouse_embedding.torch",
+            "Mus_musculus.GRCm39.gene_symbol_to_embedding_ESM1b.pt",
+        ],
+        "macaca_mulatta": [
+            "macaca_mulatta_embedding.torch",
+            "Macaca_mulatta.Mmul_10.gene_symbol_to_embedding_ESM1b.pt",
+        ],
+        "macaca_fascicularis": [
+            "macaca_fascicularis_embedding.torch",
+            "Macaca_fascicularis.Macaca_fascicularis_6.0.gene_symbol_to_embedding_ESM1b.pt",
+        ],
     },
     "ESM2": {
-        "human": "Homo_sapiens.GRCh38.gene_symbol_to_embedding_ESM2.pt",
-        "mouse": "Mus_musculus.GRCm39.gene_symbol_to_embedding_ESM2.pt",
-        "macaca_mulatta": "Macaca_mulatta.Mmul_10.gene_symbol_to_embedding_ESM2.pt",
-        "macaca_fascicularis": (
-            "Macaca_fascicularis.Macaca_fascicularis_6.0.gene_symbol_to_embedding_ESM2.pt"
-        ),
+        "human": [
+            "human_embedding.torch",
+            "Homo_sapiens.GRCh38.gene_symbol_to_embedding_ESM2.pt",
+        ],
+        "mouse": [
+            "mouse_embedding.torch",
+            "Mus_musculus.GRCm39.gene_symbol_to_embedding_ESM2.pt",
+        ],
+        "macaca_mulatta": [
+            "macaca_mulatta_embedding.torch",
+            "Macaca_mulatta.Mmul_10.gene_symbol_to_embedding_ESM2.pt",
+        ],
+        "macaca_fascicularis": [
+            "macaca_fascicularis_embedding.torch",
+            "Macaca_fascicularis.Macaca_fascicularis_6.0.gene_symbol_to_embedding_ESM2.pt",
+        ],
     },
 }
 
@@ -44,20 +66,35 @@ def ResolveEmbeddingKey(manifest_species: str) -> str:
     return manifest_species
 
 
+def _EmbeddingCandidates(embedding_model: str, key: str) -> list[str]:
+    candidates = _EMBEDDING_CANDIDATES.get(embedding_model, {}).get(key)
+    if not candidates:
+        raise RuntimeError(
+            f"No {embedding_model} embedding file mapped for species key '{key}'. "
+            "Set MACAQUE_EMBEDDING_SPECIES or embedding_path in in_data.csv."
+        )
+    return candidates
+
+
 def ResolveEmbeddingPath(
     manifest_species: str,
     embeddings_dir: Path,
     embedding_model: str = "ESM2",
 ) -> Path:
-    """Return path to protein embedding .pt for a manifest species."""
+    """Return path to protein embedding file for a manifest species."""
     key = ResolveEmbeddingKey(manifest_species)
-    files = _EMBEDDING_FILES.get(embedding_model, {})
-    if key not in files:
+    try:
+        candidates = _EmbeddingCandidates(embedding_model, key)
+    except RuntimeError as exc:
         raise RuntimeError(
             f"No {embedding_model} embedding file mapped for species '{manifest_species}' "
             f"(key={key}). Set MACAQUE_EMBEDDING_SPECIES or embedding_path in in_data.csv."
-        )
-    return embeddings_dir / files[key]
+        ) from exc
+    for filename in candidates:
+        path = embeddings_dir / filename
+        if path.exists():
+            return path
+    return embeddings_dir / candidates[0]
 
 
 def RequiredEmbeddingPaths(
@@ -98,10 +135,9 @@ def BuildInDataCsv(
 
 def ProteinEmbeddingsDownloadCommand(embeddings_dir: Path) -> str:
     """Shell command to fetch SATURN protein embeddings."""
-    parent = embeddings_dir.parent
+    extract_root = embeddings_dir.parent.parent
     return (
-        f"mkdir -p {parent} && "
+        f"mkdir -p {extract_root} && "
         "curl -L http://snap.stanford.edu/saturn/data/protein_embeddings.tar.gz | "
-        f"tar -xz -C {parent} && "
-        f"mv {parent}/protein_embeddings/* {embeddings_dir}/ 2>/dev/null || true"
+        f"tar -xz -C {extract_root}"
     )

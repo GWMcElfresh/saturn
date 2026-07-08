@@ -55,21 +55,21 @@ PyTorch CUDA 12.4 wheels are configured in `pyproject.toml` via the `pytorch-cu1
 
 ### 3. Protein embeddings
 
-SATURN needs per-species ESM protein embedding files (`.pt`). On HPC, `submit_run.sh` defaults to **ESM2** under `data/protein_embeddings_export/ESM2/`. Stanford hosts a precomputed bundle:
+SATURN needs per-species ESM protein embedding files (PyTorch dicts). On HPC, `submit_run.sh` defaults to **ESM2** under `data/protein_embeddings_export/ESM2/`. Stanford hosts a precomputed bundle:
 
 ```bash
 mkdir -p data
 curl -L http://snap.stanford.edu/saturn/data/protein_embeddings.tar.gz | tar -xz -C data/
-# Bundle layout: data/protein_embeddings_export/{ESM1b,ESM2,protXL}/*.pt
+# Bundle layout: data/protein_embeddings_export/{ESM1b,ESM2,protXL}/<species>_embedding.torch
 ```
 
 ImpacTB uses (ESM2 default):
 
 | Species in manifest | Embedding file |
 |---------------------|----------------|
-| `human` | `Homo_sapiens.GRCh38.gene_symbol_to_embedding_ESM2.pt` |
-| `macaque` | `Macaca_mulatta.Mmul_10.gene_symbol_to_embedding_ESM2.pt` |
-| `mouse` | `Mus_musculus.GRCm39.gene_symbol_to_embedding_ESM2.pt` |
+| `human` | `human_embedding.torch` |
+| `macaque` | `macaca_mulatta_embedding.torch` |
+| `mouse` | `mouse_embedding.torch` |
 
 Override model or directory if needed:
 

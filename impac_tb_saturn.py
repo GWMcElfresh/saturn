@@ -435,8 +435,9 @@ def _(mo):
     mo.md(r"""
     ## Protein embeddings
 
-    Verify per-species ESM embedding `.pt` files under `EMBEDDINGS_DIR` (default
-    `data/protein_embeddings_export/ESM2/`). Stops with a download command if any are missing. In dry-run mode, reports success
+    Verify per-species ESM embedding files under `EMBEDDINGS_DIR` (default
+    `data/protein_embeddings_export/ESM2/`). Expects Stanford bundle names like
+    `human_embedding.torch`. Stops with a download command if any are missing. In dry-run mode, reports success
     without proceeding to training.
     """)
     return
