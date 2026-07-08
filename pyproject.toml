@@ -36,6 +36,7 @@ dependencies = [
     "tqdm",
     "matplotlib<3.7",
     "seaborn",
+    "plotly",
   # Marimo notebook
     "marimo[recommended]>=0.23.0",
     "h5py>=3.1",
