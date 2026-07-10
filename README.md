@@ -84,7 +84,7 @@ Override macaque subspecies if needed:
 export MACAQUE_EMBEDDING_SPECIES=macaca_fascicularis
 ```
 
-Gene symbols in your `.h5ad` must appear in each species’ embedding dict. See [SATURN protein embeddings docs](https://github.com/snap-stanford/SATURN/tree/main/protein_embeddings) to generate custom files.
+Gene symbols in your `.h5ad` must appear in each species’ embedding dict. Startup and `SATURN_DRY_RUN=1` check gene–embedding overlap (case-insensitive), not just that embedding files exist. See [SATURN protein embeddings docs](https://github.com/snap-stanford/SATURN/tree/main/protein_embeddings) to generate custom files.
 
 ### 4. Point at harmonized data
 
@@ -184,7 +184,7 @@ Auto-detection order: cell-type columns → existing cluster columns (resolution
 | `SATURN_NUM_MACROGENES` | `2000` | Macrogene count |
 | `SATURN_EMBEDDING_MODEL` | `ESM2` | Protein embedding model (`ESM1b`, `ESM2`, …) |
 | `SATURN_DEVICE_NUM` | `0` | CUDA device index |
-| `SATURN_DRY_RUN` | off | `1` = skip `train-saturn.py` |
+| `SATURN_DRY_RUN` | off | `1` = skip `train-saturn.py` (still checks embedding files + gene overlap) |
 | `MACAQUE_EMBEDDING_SPECIES` | `macaca_mulatta` | Macaque embedding key |
 
 ## Repository layout

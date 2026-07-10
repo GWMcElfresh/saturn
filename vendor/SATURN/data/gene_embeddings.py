@@ -101,6 +101,16 @@ def load_gene_embeddings_adata(adata: AnnData, species: list, embedding_model: s
         }
 
     # Determine which genes to include based on gene expression and embedding availability
+    n_input_genes = adata.n_vars
+    sample_var_names = list(adata.var_names[:5])
+    n_embedding_keys = {
+        species: len(gene_symbol_to_embedding)
+        for species, gene_symbol_to_embedding in species_to_gene_symbol_to_embedding.items()
+    }
+    sample_embedding_keys = {
+        species: list(gene_symbol_to_embedding.keys())[:5]
+        for species, gene_symbol_to_embedding in species_to_gene_symbol_to_embedding.items()
+    }
     genes_with_embeddings = set.intersection(*[
         set(gene_symbol_to_embedding)
         for gene_symbol_to_embedding in species_to_gene_symbol_to_embedding.values()
@@ -109,6 +119,13 @@ def load_gene_embeddings_adata(adata: AnnData, species: list, embedding_model: s
 
     # Subset data to only use genes with embeddings
     adata = adata[:, adata.var_names.isin(genes_to_use)]
+
+    if adata.n_vars == 0:
+        raise ValueError(
+            f"No genes in AnnData overlap with embedding keys for species {species_names}. "
+            f"n_input_genes={n_input_genes}, n_embedding_keys={n_embedding_keys}, "
+            f"sample_var_names={sample_var_names}, sample_embedding_keys={sample_embedding_keys}."
+        )
 
     # Set up dictionary mapping species to gene embedding matrix (num_genes, embedding_dim)
     species_to_gene_embeddings = {

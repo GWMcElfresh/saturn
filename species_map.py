@@ -141,3 +141,60 @@ def ProteinEmbeddingsDownloadCommand(embeddings_dir: Path) -> str:
         "curl -L http://snap.stanford.edu/saturn/data/protein_embeddings.tar.gz | "
         f"tar -xz -C {extract_root}"
     )
+
+
+def PreflightGeneEmbeddingOverlap(
+    h5ad_paths: dict[str, Path],
+    embedding_paths: dict[str, Path],
+    sample_n: int = 5,
+) -> dict[str, dict[str, int]]:
+    """Check case-insensitive gene overlap between h5ads and embedding dicts.
+
+    Prints one summary line per species. Raises ValueError if any species has
+    zero matched genes. Returns per-species stats:
+    n_genes, n_embedding_keys, n_matched.
+    """
+    import anndata as ad
+    import torch
+
+    stats: dict[str, dict[str, int]] = {}
+    failures: list[str] = []
+
+    for species, h5ad_path in h5ad_paths.items():
+        emb_path = embedding_paths[species]
+        adata = ad.read_h5ad(h5ad_path, backed="r")
+        try:
+            var_names = [str(g) for g in adata.var_names]
+        finally:
+            if getattr(adata, "isbacked", False):
+                adata.file.close()
+
+        emb = torch.load(emb_path, map_location="cpu")
+        emb_keys_lower = {str(k).lower() for k in emb.keys()}
+        matched = sum(1 for g in var_names if g.lower() in emb_keys_lower)
+        n_genes = len(var_names)
+        n_keys = len(emb_keys_lower)
+        print(
+            f"SATURN_IMPACTB: gene_overlap species={species} "
+            f"matched={matched} / {n_genes} (embedding_keys={n_keys})",
+            flush=True,
+        )
+        stats[species] = {
+            "n_genes": n_genes,
+            "n_embedding_keys": n_keys,
+            "n_matched": matched,
+        }
+        if matched == 0:
+            sample_vars = var_names[:sample_n]
+            sample_keys = [str(k) for k in list(emb.keys())[:sample_n]]
+            failures.append(
+                f"{species}: 0/{n_genes} genes match embedding ({emb_path}); "
+                f"sample_var_names={sample_vars}; sample_embedding_keys={sample_keys}"
+            )
+
+    if failures:
+        raise ValueError(
+            "Gene–embedding overlap is empty for one or more species:\n  "
+            + "\n  ".join(failures)
+        )
+    return stats

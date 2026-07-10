@@ -23,6 +23,7 @@ from saturn_exports import (  # noqa: E402
 )
 from species_map import (  # noqa: E402
     BuildInDataCsv,
+    PreflightGeneEmbeddingOverlap,
     ProteinEmbeddingsDownloadCommand,
     ResolveEmbeddingKey,
     ResolveEmbeddingPath,
@@ -142,6 +143,38 @@ def test_find_genes_to_macrogenes_pkl(tmp: Path | None = None) -> None:
     assert find_genes_to_macrogenes_pkl(tmp) == pkl
 
 
+def test_preflight_gene_embedding_overlap(tmp: Path | None = None) -> None:
+    import torch
+
+    tmp = tmp or SATURN_ROOT / "work" / "smoke_overlap"
+    tmp.mkdir(parents=True, exist_ok=True)
+
+    genes = [f"Gene{i}" for i in range(10)]
+    adata = _synthetic_adata(n_obs=20, n_vars=10)
+    adata.var_names = genes
+    h5ad_path = tmp / "human_saturn.h5ad"
+    adata.write_h5ad(h5ad_path)
+
+    ok_emb = {g: torch.zeros(4) for g in genes[:6]}
+    ok_path = tmp / "human_ok.torch"
+    torch.save(ok_emb, ok_path)
+    stats = PreflightGeneEmbeddingOverlap(
+        {"human": h5ad_path}, {"human": ok_path}
+    )
+    assert stats["human"]["n_matched"] == 6
+
+    bad_emb = {f"Other{i}": torch.zeros(4) for i in range(5)}
+    bad_path = tmp / "human_bad.torch"
+    torch.save(bad_emb, bad_path)
+    try:
+        PreflightGeneEmbeddingOverlap({"human": h5ad_path}, {"human": bad_path})
+    except ValueError as exc:
+        assert "Gene–embedding overlap is empty" in str(exc)
+        assert "human" in str(exc)
+    else:
+        raise AssertionError("expected ValueError for zero gene overlap")
+
+
 if __name__ == "__main__":
     test_cell_type_detection()
     test_cluster_resolution_picker()
@@ -152,4 +185,5 @@ if __name__ == "__main__":
     test_find_integrated_h5ad_prefers_newest()
     test_export_macrogene_weights_tsv()
     test_find_genes_to_macrogenes_pkl()
+    test_preflight_gene_embedding_overlap()
     print("saturn smoke_check: OK")

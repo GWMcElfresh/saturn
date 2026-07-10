@@ -98,7 +98,7 @@ def _(mo):
     Key inputs: harmonized AnnData under `outputs/harmonized/` (override with `HARMONIZED_DIR`),
     HVG/downsample settings, label-resolution options, and SATURN training knobs (`SATURN_*`).
     Preprocessing cache lives in `./cache/` beside this notebook. `SATURN_DRY_RUN=1` validates
-    inputs without launching training.
+    inputs (including gene–embedding overlap) without launching training.
     """)
     return
 
@@ -222,6 +222,7 @@ def _(SATURN_ROOT, VENDOR_SATURN):
     )
     from species_map import (
         BuildInDataCsv,
+        PreflightGeneEmbeddingOverlap,
         ProteinEmbeddingsDownloadCommand,
         RequiredEmbeddingPaths,
     )
@@ -232,6 +233,7 @@ def _(SATURN_ROOT, VENDOR_SATURN):
     )
     return (
         BuildInDataCsv,
+        PreflightGeneEmbeddingOverlap,
         ProteinEmbeddingsDownloadCommand,
         RequiredEmbeddingPaths,
         ResolveLabelColumn,
@@ -437,8 +439,9 @@ def _(mo):
 
     Verify per-species ESM embedding files under `EMBEDDINGS_DIR` (default
     `data/protein_embeddings_export/ESM2/`). Expects Stanford bundle names like
-    `human_embedding.torch`. Stops with a download command if any are missing. In dry-run mode, reports success
-    without proceeding to training.
+    `human_embedding.torch`. Stops with a download command if any are missing.
+    Also checks that each h5ad's gene symbols overlap the embedding dict
+    (case-insensitive). In dry-run mode, reports success without proceeding to training.
     """)
     return
 
@@ -446,10 +449,12 @@ def _(mo):
 @app.cell
 def _(
     EMBEDDINGS_DIR,
+    PreflightGeneEmbeddingOverlap,
     ProteinEmbeddingsDownloadCommand,
     RequiredEmbeddingPaths,
     SATURN_DRY_RUN,
     SATURN_EMBEDDING_MODEL,
+    h5ad_paths,
     mo,
     species_order,
 ):
@@ -480,9 +485,10 @@ def _(
                 "or paths via embedding_path in in_data.csv."
             )
         )
+    gene_overlap_stats = PreflightGeneEmbeddingOverlap(h5ad_paths, embedding_paths)
     if SATURN_DRY_RUN:
         _ = mo.md("**SATURN_DRY_RUN=1** — skipping training; inputs validated.")
-    return embedding_paths, missing
+    return embedding_paths, gene_overlap_stats, missing
 
 
 @app.cell(hide_code=True)
