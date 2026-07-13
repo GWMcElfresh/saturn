@@ -58,6 +58,7 @@ explicit = true
 [tool.hatch.build.targets.wheel]
 only-include = [
     "impactb_preprocess.py",
+    "gene_id_remap.py",
     "label_resolve.py",
     "species_map.py",
     "saturn_exports.py",

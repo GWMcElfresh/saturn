@@ -1,6 +1,7 @@
 submit.sh
 data/protein_embeddings/
 data/protein_embeddings_export/
+data/gene_maps/*.tsv
 **/cache/
 **/model_outputs/
 **/saturn_outputs/

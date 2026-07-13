@@ -212,6 +212,7 @@ def _(SATURN_ROOT, VENDOR_SATURN):
     if VENDOR_SATURN.is_dir():
         sys.path.insert(0, str(VENDOR_SATURN))
 
+    from gene_id_remap import RemapAnnDataVarNamesToSymbols
     from impactb_preprocess import build_or_load_cache, resolve_expression_matrix
     from label_resolve import ResolveLabelColumn
     from saturn_exports import (
@@ -237,6 +238,7 @@ def _(SATURN_ROOT, VENDOR_SATURN):
         ProteinEmbeddingsDownloadCommand,
         RequiredEmbeddingPaths,
         ResolveLabelColumn,
+        RemapAnnDataVarNamesToSymbols,
         build_or_load_cache,
         export_cell_clusters_tsv,
         export_macrogene_weights_tsv,
@@ -400,18 +402,24 @@ def _(mo):
     ## Export SATURN input h5ads
 
     Copy each species AnnData to `cache/saturn_inputs/`, normalize the expression layer
-    SATURN expects, and write labels into a unified `saturn_label` column. Displays a
-    summary table of label columns and sources.
+    SATURN expects, and write labels into a unified `saturn_label` column. If
+    `var_names` are Entrez-like IDs (GENE_HARMONIZE), remap them to species-native
+    gene symbols so they match ESM embedding keys. Displays a summary table of
+    label columns and sources.
     """)
     return
 
 
 @app.cell
 def _(
+    HARMONIZED_DIR,
+    RemapAnnDataVarNamesToSymbols,
+    SATURN_ROOT,
     adatas,
     label_cols,
     label_summary,
     mo,
+    os,
     resolve_expression_matrix,
     saturn_inputs_dir,
     species_order,
@@ -419,8 +427,22 @@ def _(
     SATURN_LABEL_COL = "saturn_label"
     h5ad_paths: dict[str, object] = {}
     expr_sources: dict[str, str] = {}
+    gene_remap_stats: dict[str, object] = {}
+    _shared_genes = HARMONIZED_DIR / "shared_genes.csv"
+    _shared_genes_path = _shared_genes if _shared_genes.exists() else None
+    _gene_maps_dir = (
+        os.environ.get("GENE_MAPS_DIR", "").strip()
+        or str(SATURN_ROOT / "data" / "gene_maps")
+    )
     for _species, _adata in zip(species_order, adatas):
         _adata_out, _src = resolve_expression_matrix(_adata.copy())
+        _adata_out, _remap_stats = RemapAnnDataVarNamesToSymbols(
+            _adata_out,
+            _species,
+            shared_genes_path=_shared_genes_path,
+            gene_maps_dir=_gene_maps_dir,
+        )
+        gene_remap_stats[_species] = _remap_stats
         _src_col = label_cols[_species]
         _adata_out.obs[SATURN_LABEL_COL] = _adata_out.obs[_src_col].astype(str)
         expr_sources[_species] = _src
@@ -429,7 +451,7 @@ def _(
         h5ad_paths[_species] = _out_path
     in_data_label_cols = {_s: SATURN_LABEL_COL for _s in species_order}
     mo.md(label_summary.to_markdown(index=False))
-    return expr_sources, h5ad_paths, in_data_label_cols
+    return expr_sources, gene_remap_stats, h5ad_paths, in_data_label_cols
 
 
 @app.cell(hide_code=True)

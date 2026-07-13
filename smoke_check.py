@@ -15,6 +15,10 @@ import pickle
 SATURN_ROOT = Path(__file__).resolve().parent
 sys.path.insert(0, str(SATURN_ROOT))
 
+from gene_id_remap import (  # noqa: E402
+    LooksLikeEntrezIds,
+    RemapAnnDataVarNamesToSymbols,
+)
 from label_resolve import ResolveLabelColumn, _find_cluster_column  # noqa: E402
 from saturn_exports import (  # noqa: E402
     export_macrogene_weights_tsv,
@@ -175,6 +179,72 @@ def test_preflight_gene_embedding_overlap(tmp: Path | None = None) -> None:
         raise AssertionError("expected ValueError for zero gene overlap")
 
 
+def test_gene_id_remap_from_var_column() -> None:
+    adata = _synthetic_adata(n_obs=10, n_vars=5)
+    adata.var_names = ["100", "101", "102", "103", "104"]
+    adata.var["gene_symbol"] = ["ADA", "CDK", "GAPDH", "CD3D", "MissingDrop"]
+    # Drop last via incomplete map by clearing one later — use mapping that drops none
+    out, stats = RemapAnnDataVarNamesToSymbols(adata, "human", force=True)
+    assert stats["remapped"] is True
+    assert list(out.var_names) == ["ADA", "CDK", "GAPDH", "CD3D", "MissingDrop"]
+    assert "entrez_id" in out.var.columns
+
+
+def test_gene_id_remap_from_shared_genes_and_maps(tmp: Path | None = None) -> None:
+    import torch
+
+    tmp = tmp or SATURN_ROOT / "work" / "smoke_remap"
+    tmp.mkdir(parents=True, exist_ok=True)
+
+    assert LooksLikeEntrezIds(["100", "1000", "A1BG"]) is False
+    assert LooksLikeEntrezIds(["100", "1000", "10000"]) is True
+
+    shared = tmp / "shared_genes.csv"
+    pd.DataFrame(
+        {
+            "human_entrez": [100, 2597, 915],
+            "human_symbol": ["ADA", "GAPDH", "CD3D"],
+            "mouse_symbol": ["Ada", "Gapdh", "Cd3d"],
+            "macaque_symbol": ["ADA", "GAPDH", "CD3D"],
+        }
+    ).to_csv(shared, index=False)
+
+    adata = _synthetic_adata(n_obs=8, n_vars=3)
+    adata.var_names = ["100", "2597", "915"]
+    out_h, stats_h = RemapAnnDataVarNamesToSymbols(
+        adata, "human", shared_genes_path=shared
+    )
+    assert list(out_h.var_names) == ["ADA", "GAPDH", "CD3D"]
+    assert stats_h["source"].startswith("shared_genes")
+
+    out_m, _ = RemapAnnDataVarNamesToSymbols(
+        adata.copy(), "mouse", shared_genes_path=shared
+    )
+    assert list(out_m.var_names) == ["Ada", "Gapdh", "Cd3d"]
+
+    maps = tmp / "gene_maps"
+    maps.mkdir(exist_ok=True)
+    pd.DataFrame({"entrez": ["100", "2597"], "symbol": ["ADA", "GAPDH"]}).to_csv(
+        maps / "human_entrez_to_human_symbol.tsv", sep="\t", index=False
+    )
+    adata2 = _synthetic_adata(n_obs=5, n_vars=3)
+    adata2.var_names = ["100", "2597", "999999"]
+    out2, stats2 = RemapAnnDataVarNamesToSymbols(
+        adata2, "human", gene_maps_dir=maps
+    )
+    assert list(out2.var_names) == ["ADA", "GAPDH"]
+    assert stats2["n_dropped"] == 1
+
+    # End-to-end: remapped h5ad overlaps embedding keys
+    h5ad_path = tmp / "human_remapped.h5ad"
+    out_h.write_h5ad(h5ad_path)
+    emb = {g: torch.zeros(2) for g in ["ADA", "GAPDH", "CD3D", "EXTRA"]}
+    emb_path = tmp / "human.torch"
+    torch.save(emb, emb_path)
+    ov = PreflightGeneEmbeddingOverlap({"human": h5ad_path}, {"human": emb_path})
+    assert ov["human"]["n_matched"] == 3
+
+
 if __name__ == "__main__":
     test_cell_type_detection()
     test_cluster_resolution_picker()
@@ -186,4 +256,6 @@ if __name__ == "__main__":
     test_export_macrogene_weights_tsv()
     test_find_genes_to_macrogenes_pkl()
     test_preflight_gene_embedding_overlap()
+    test_gene_id_remap_from_var_column()
+    test_gene_id_remap_from_shared_genes_and_maps()
     print("saturn smoke_check: OK")

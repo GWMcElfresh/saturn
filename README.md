@@ -86,6 +86,12 @@ export MACAQUE_EMBEDDING_SPECIES=macaca_fascicularis
 
 Gene symbols in your `.h5ad` must appear in each species’ embedding dict. Startup and `SATURN_DRY_RUN=1` check gene–embedding overlap (case-insensitive), not just that embedding files exist. See [SATURN protein embeddings docs](https://github.com/snap-stanford/SATURN/tree/main/protein_embeddings) to generate custom files.
 
+If GENE_HARMONIZE left **Entrez IDs** in `var_names`, the export step remaps them to species-native symbols using (in order) an `adata.var` symbol column, `HARMONIZED_DIR/shared_genes.csv`, or TSVs under `data/gene_maps/` (override with `GENE_MAPS_DIR`). Build the NCBI maps once:
+
+```bash
+python scripts/build_entrez_symbol_maps.py
+```
+
 ### 4. Point at harmonized data
 
 ```bash
@@ -186,6 +192,7 @@ Auto-detection order: cell-type columns → existing cluster columns (resolution
 | `SATURN_DEVICE_NUM` | `0` | CUDA device index |
 | `SATURN_DRY_RUN` | off | `1` = skip `train-saturn.py` (still checks embedding files + gene overlap) |
 | `MACAQUE_EMBEDDING_SPECIES` | `macaca_mulatta` | Macaque embedding key |
+| `GENE_MAPS_DIR` | `${PROJECT_DIR}/data/gene_maps` | human-Entrez → species-symbol TSVs for SATURN export |
 
 ## Repository layout
 
@@ -195,11 +202,15 @@ saturn/
   impactb_preprocess.py   # downsample + HVG union + cache
   label_resolve.py        # label auto-detect + on-the-fly Leiden
   species_map.py          # manifest → protein embedding paths
+  gene_id_remap.py        # Entrez → species gene symbols for embeddings
   smoke_check.py          # quick self-check
+  scripts/
+    build_entrez_symbol_maps.py  # NCBI gene_info/orthologs → data/gene_maps/
   pyproject.toml
   vendor/SATURN/          # vendored snap-stanford/SATURN (see VENDOR_SHA)
   data/
     protein_embeddings_export/  # downloaded .pt files by model (ESM2/, ESM1b/, …)
+    gene_maps/            # human_entrez_to_{human,mouse,macaque}_symbol.tsv
     in_data.csv           # generated at runtime
 ```
 
