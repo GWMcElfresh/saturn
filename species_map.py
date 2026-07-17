@@ -143,19 +143,31 @@ def ProteinEmbeddingsDownloadCommand(embeddings_dir: Path) -> str:
     )
 
 
+# Fail when matched/n_genes is below this (near-zero overlap still breaks training).
+_DEFAULT_MIN_GENE_OVERLAP = 0.05
+
+
 def PreflightGeneEmbeddingOverlap(
     h5ad_paths: dict[str, Path],
     embedding_paths: dict[str, Path],
     sample_n: int = 5,
+    min_overlap_frac: float | None = None,
 ) -> dict[str, dict[str, int]]:
     """Check case-insensitive gene overlap between h5ads and embedding dicts.
 
     Prints one summary line per species. Raises ValueError if any species has
-    zero matched genes. Returns per-species stats:
-    n_genes, n_embedding_keys, n_matched.
+    zero matched genes or matched/n_genes below ``min_overlap_frac`` (default
+    0.05, override with env ``SATURN_MIN_GENE_OVERLAP``). Returns per-species
+    stats: n_genes, n_embedding_keys, n_matched.
     """
+    import os
+
     import anndata as ad
     import torch
+
+    if min_overlap_frac is None:
+        _env = os.environ.get("SATURN_MIN_GENE_OVERLAP", "").strip()
+        min_overlap_frac = float(_env) if _env else _DEFAULT_MIN_GENE_OVERLAP
 
     stats: dict[str, dict[str, int]] = {}
     failures: list[str] = []
@@ -174,6 +186,7 @@ def PreflightGeneEmbeddingOverlap(
         matched = sum(1 for g in var_names if g.lower() in emb_keys_lower)
         n_genes = len(var_names)
         n_keys = len(emb_keys_lower)
+        frac = (matched / n_genes) if n_genes else 0.0
         print(
             f"SATURN_IMPACTB: gene_overlap species={species} "
             f"matched={matched} / {n_genes} (embedding_keys={n_keys})",
@@ -184,17 +197,18 @@ def PreflightGeneEmbeddingOverlap(
             "n_embedding_keys": n_keys,
             "n_matched": matched,
         }
-        if matched == 0:
+        if matched == 0 or frac < min_overlap_frac:
             sample_vars = var_names[:sample_n]
             sample_keys = [str(k) for k in list(emb.keys())[:sample_n]]
             failures.append(
-                f"{species}: 0/{n_genes} genes match embedding ({emb_path}); "
+                f"{species}: {matched}/{n_genes} genes match embedding "
+                f"({frac:.3f} < min {min_overlap_frac:.3f}) ({emb_path}); "
                 f"sample_var_names={sample_vars}; sample_embedding_keys={sample_keys}"
             )
 
     if failures:
         raise ValueError(
-            "Gene–embedding overlap is empty for one or more species:\n  "
+            "Gene–embedding overlap is empty or too low for one or more species:\n  "
             + "\n  ".join(failures)
             + "\n\nIf sample_var_names look like Entrez IDs (numeric) while "
             "sample_embedding_keys are gene symbols, ensure Entrez→symbol remap "

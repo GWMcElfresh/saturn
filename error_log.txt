@@ -1,0 +1,133 @@
+# SATURN ImpacTB — error log
+
+Running record of HPC / dry-run failures and attempted fixes.
+Newest entries at the bottom.
+
+--------------------------------------------------------------------------------
+## 2026-07-16 — Empty gene–embedding overlap (Entrez vs symbols)
+
+### Symptom
+```
+ValueError: Gene–embedding overlap is empty for one or more species:
+  human: 0/5606 genes match embedding (.../human_embedding.torch);
+    sample_var_names=['100', '1000', '10000', '10007', '10008'];
+    sample_embedding_keys=['A1BG', 'A1CF', 'A2M', 'A2ML1', 'A3GALT2']
+  (same pattern for macaque / mouse)
+```
+Preflight: `PreflightGeneEmbeddingOverlap` in `species_map.py`.
+Location: `impac_tb_saturn.py` ~line 510.
+
+### Root cause
+ImpacTB GENE_HARMONIZE leaves **human Entrez IDs** in `var_names`. ESM2 embeddings are keyed by **gene symbols**. Literal string overlap is empty until Entrez→symbol remap succeeds.
+
+### Attempted fixes
+1. **780494c** — Added `PreflightGeneEmbeddingOverlap` (detect only; does not remap).
+2. **f0d101a** — Added `gene_id_remap.py`, `scripts/build_entrez_symbol_maps.py`, wired remap into export. Gene-map TSVs are gitignored (must be built per host).
+3. **b96c843** — Skip Entrez-like `adata.var` “symbol” columns (identity Entrez→Entrez); raise if remapped names still look Entrez; clearer preflight hint.
+4. Ops: run `python scripts/build_entrez_symbol_maps.py` on Exacloud; clear `cache/saturn_inputs/*_saturn.h5ad`.
+
+### Outcome
+Partial. Maps alone were not enough when remap gated incorrectly (see next entry). HPC also had local `main` ahead of `origin/main` (merge commits), which complicated sync diagnosis; `b96c843` was already an ancestor of HPC HEAD.
+
+--------------------------------------------------------------------------------
+## 2026-07-17 — Silent noop / float Entrez bypass (with maps + b96c843 present)
+
+### Symptom
+Same empty-overlap error as above after gene maps were built on the cluster and `b96c843` was already in history. Dry-run / batch still showed Entrez `sample_var_names` at preflight.
+
+### Root cause (local synthetic repro)
+1. **Silent noop:** `LooksLikeEntrezIds` required ≥80% pure `^\d+$`. Mixed IDs (e.g. 70% Entrez + ENSG) → `source=noop` with **no log line** → maps never opened → Entrez written to `saturn_inputs` → 0 overlap.
+2. **Float forms:** `"100.0"` failed the digit regex → same silent noop.
+3. **Float symbol column:** `adata.var['symbol'] = ['100.0', …]` was not skipped by harden → remapped to `"100.0"` → post-check did not raise → 0 overlap.
+
+### Attempted / applied fix
+In `gene_id_remap.py`:
+- Treat `^\d+(\.0+)?$` as Entrez-like.
+- Always log noop (with `entrez_frac` + sample names).
+- Attempt remap when Entrez-like fraction ≥0.5 **and** gene maps / shared_genes / real symbol column exist.
+- Fail closed if material Entrez-like IDs have no map, or remapped names still look Entrez-like.
+Smoke tests: mixed-ID and float-symbol cases in `smoke_check.py`.
+
+### Outcome
+Local repro cases pass. HPC progressed past preflight-style Entrez failure into export write (next entry).
+
+--------------------------------------------------------------------------------
+## 2026-07-17 — Early dry-run exit (incomplete validation)
+
+### Symptom
+```
+SATURN_DRY_RUN=1 uv run impac_tb_saturn.py
+… torch=… cache_dir=… out_dir=…
+# shell prompt returns — no gene_remap / gene_overlap lines
+```
+
+### Notes
+Not a pass. Run stopped (or appeared to stop) after printing cache/out dirs, before remap and preflight. A successful dry-run must show `gene_remap source=gene_maps:…` and `gene_overlap … matched>0`.
+
+### Attempted fixes
+None in code; re-run / capture full log. Later runs advanced further.
+
+--------------------------------------------------------------------------------
+## 2026-07-17 — write_h5ad var index/column clash (`feature_name`)
+
+### Symptom
+```
+ValueError: DataFrame.index.name ('feature_name') is also used by a column
+whose values are different. This is not supported.
+Error raised while writing key 'var' of <class 'h5py._hl.group.Group'> to /
+```
+at `impac_tb_saturn.py` ~450 `_adata_out.write_h5ad(_out_path)` after remap.
+
+### Clarification
+`to /` is the **HDF5 file root**, not the filesystem root.
+
+### Root cause
+Harmonized AnnData has `var.index.name == "feature_name"` and a column `var["feature_name"]` still holding Entrez/old IDs. Remap set symbol `var_names` but kept index name `feature_name` → AnnData write rejects the clash.
+
+### Applied fix
+In `RemapAnnDataVarNamesToSymbols` (`gene_id_remap.py`):
+- Set `out.var_names = pd.Index(uniq_symbols, name=None)`.
+- Overwrite any present `_SYMBOL_COL_CANDIDATES` columns (including `feature_name`) with the new symbol list.
+- Keep `entrez_id` for original IDs.
+Smoke test: `test_gene_id_remap_feature_name_index_column_write_h5ad` in `smoke_check.py`.
+
+### Outcome
+Local smoke test passes (remap + `write_h5ad` + reload). Pending HPC: `SATURN_DRY_RUN=1` through `gene_overlap matched>0`.
+
+--------------------------------------------------------------------------------
+## 2026-07-17 — Preempt: next HPC failure modes
+
+Forecasted after the write_h5ad fix; mitigated in-repo before the next dry-run:
+
+1. **Missing gene maps late** — maps are gitignored; remap used to fail only after
+   expensive downsample/HVG. Now fail-fast after `cache_dir`/`out_dir` if
+   `integration_manifest.csv` or the three `data/gene_maps/*.tsv` are absent.
+2. **Ambiguous early dry-run exit** — logs now print `preprocess start` /
+   `preprocess done`, and a successful dry-run ends preflight with
+   `SATURN_IMPACTB: dry_run_ok gene_overlap=…`.
+3. **Near-zero overlap** — preflight fails when `matched/n_genes < 0.05`
+   (override with `SATURN_MIN_GENE_OVERLAP`), not only when matched is exactly 0.
+4. **GPU waste for validation** — use CPU wrapper:
+   `bash scripts/submit_dry_run.sh` (`partition=batch`, `SATURN_DRY_RUN=1`).
+
+--------------------------------------------------------------------------------
+## How to validate on HPC
+
+```bash
+cd /home/exacloud/gscratch/prime-seq/Bimber/GW/saturn
+# ensure latest gene_id_remap.py / species_map.py / impac_tb_saturn.py are present
+# ensure gene maps: python scripts/build_entrez_symbol_maps.py  # if TSVs missing
+rm -f cache/saturn_inputs/*_saturn.h5ad
+bash scripts/submit_dry_run.sh
+# or (compute node / interactive): SATURN_DRY_RUN=1 python impac_tb_saturn.py
+```
+
+Expect:
+- `SATURN_IMPACTB: gene_maps_dir = …` (fail-fast passed)
+- `SATURN_IMPACTB: preprocess start` then `preprocess done`
+- `SATURN_IMPACTB: gene_remap … source=gene_maps:… mapped=…`
+- `SATURN_IMPACTB: gene_overlap … matched=` with matched/n_genes ≥ 0.05
+- `SATURN_IMPACTB: dry_run_ok gene_overlap=…`
+- No `feature_name` / DataFrame.index.name write error
+
+Then full train: `bash submit_run.sh`

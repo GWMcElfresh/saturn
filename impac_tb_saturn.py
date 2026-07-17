@@ -270,7 +270,15 @@ def _(mo):
 
 
 @app.cell
-def _(CACHE_SUBDIR, SATURN_OUTPUT_DIR, SATURN_ROOT, WORKING_DIR, pathlib):
+def _(
+    CACHE_SUBDIR,
+    HARMONIZED_DIR,
+    SATURN_OUTPUT_DIR,
+    SATURN_ROOT,
+    WORKING_DIR,
+    os,
+    pathlib,
+):
     cache_dir = SATURN_ROOT / CACHE_SUBDIR
     cache_dir.mkdir(parents=True, exist_ok=True)
     _output = pathlib.Path(SATURN_OUTPUT_DIR)
@@ -284,6 +292,30 @@ def _(CACHE_SUBDIR, SATURN_OUTPUT_DIR, SATURN_ROOT, WORKING_DIR, pathlib):
     saturn_inputs_dir.mkdir(parents=True, exist_ok=True)
     print(f"SATURN_IMPACTB: cache_dir = {cache_dir}", flush=True)
     print(f"SATURN_IMPACTB: out_dir   = {out_dir}", flush=True)
+
+    # Fail-fast before expensive downsample/HVG (maps are gitignored per host).
+    _manifest = HARMONIZED_DIR / "integration_manifest.csv"
+    if not _manifest.exists():
+        raise FileNotFoundError(
+            f"Missing harmonized manifest: {_manifest}. "
+            "Set HARMONIZED_DIR to the ImpacTB harmonized_outputs directory."
+        )
+    _gene_maps_dir = pathlib.Path(
+        os.environ.get("GENE_MAPS_DIR", "").strip()
+        or str(SATURN_ROOT / "data" / "gene_maps")
+    )
+    _missing_maps = [
+        str(_gene_maps_dir / f"human_entrez_to_{_sp}_symbol.tsv")
+        for _sp in ("human", "mouse", "macaque")
+        if not (_gene_maps_dir / f"human_entrez_to_{_sp}_symbol.tsv").exists()
+    ]
+    if _missing_maps:
+        raise FileNotFoundError(
+            "Missing Entrez→symbol gene maps (required before preprocess):\n  "
+            + "\n  ".join(_missing_maps)
+            + "\nRun: python scripts/build_entrez_symbol_maps.py"
+        )
+    print(f"SATURN_IMPACTB: gene_maps_dir = {_gene_maps_dir}", flush=True)
     return cache_dir, out_dir, saturn_inputs_dir
 
 
@@ -313,6 +345,7 @@ def _(
 ):
     from impactb_preprocess import load_manifest_adatas
 
+    print("SATURN_IMPACTB: preprocess start", flush=True)
     _raw_adatas, _species_order, _manifest = load_manifest_adatas(HARMONIZED_DIR)
     _max_cells = (
         MAX_CELLS_PER_SPECIES
@@ -341,6 +374,7 @@ def _(
             f"  {_species}: {_adata.n_obs:,} cells × {_adata.n_vars:,} genes",
             flush=True,
         )
+    print("SATURN_IMPACTB: preprocess done", flush=True)
     return adatas, cache_result, manifest, n_genes_union, species_order
 
 
@@ -509,6 +543,13 @@ def _(
         )
     gene_overlap_stats = PreflightGeneEmbeddingOverlap(h5ad_paths, embedding_paths)
     if SATURN_DRY_RUN:
+        _matched = {
+            _s: _st["n_matched"] for _s, _st in gene_overlap_stats.items()
+        }
+        print(
+            f"SATURN_IMPACTB: dry_run_ok gene_overlap={_matched}",
+            flush=True,
+        )
         _ = mo.md("**SATURN_DRY_RUN=1** — skipping training; inputs validated.")
     return embedding_paths, gene_overlap_stats, missing
 

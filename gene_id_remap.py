@@ -343,8 +343,13 @@ def RemapAnnDataVarNamesToSymbols(
     if n_dup:
         out = out[:, uniq_idx].copy()
         out.var["entrez_id"] = uniq_entrez
-    out.var_names = pd.Index(uniq_symbols, name=out.var_names.name)
+    # Clear inherited index name (e.g. feature_name) so it cannot clash with a
+    # var column of the same name that still holds pre-remap Entrez IDs.
+    out.var_names = pd.Index(uniq_symbols, name=None)
     out.var_names_make_unique()
+    for col in _SYMBOL_COL_CANDIDATES:
+        if col in out.var.columns:
+            out.var[col] = list(out.var_names)
 
     if LooksLikeEntrezIds(out.var_names, min_frac=_REMAP_ATTEMPT_MIN_FRAC):
         raise ValueError(
