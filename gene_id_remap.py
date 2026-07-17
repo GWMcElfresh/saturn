@@ -72,10 +72,20 @@ def LooksLikeEntrezIds(var_names: list[str] | pd.Index, min_frac: float = 0.8) -
 
 
 def ResolveSymbolColumn(var: pd.DataFrame) -> str | None:
-    """Return adata.var column that looks like gene symbols, if any."""
+    """Return adata.var column that looks like gene symbols, if any.
+
+    Skips columns whose values are mostly Entrez-like (numeric), so identity
+    Entrez→Entrez remaps do not silently win over shared_genes / gene_maps.
+    """
     for col in _SYMBOL_COL_CANDIDATES:
-        if col in var.columns:
-            return col
+        if col not in var.columns:
+            continue
+        values = [str(v).strip() for v in var[col] if pd.notna(v) and str(v).strip()]
+        if not values:
+            continue
+        if LooksLikeEntrezIds(values):
+            continue
+        return col
     return None
 
 
@@ -249,6 +259,15 @@ def RemapAnnDataVarNamesToSymbols(
         out.var["entrez_id"] = uniq_entrez
     out.var_names = pd.Index(uniq_symbols, name=out.var_names.name)
     out.var_names_make_unique()
+
+    if LooksLikeEntrezIds(out.var_names):
+        raise ValueError(
+            f"Entrez→symbol remap still produced Entrez-like var_names for "
+            f"species={species} (source={source}, n_out={out.n_vars}). "
+            f"sample_var_names={list(out.var_names[:5])}. "
+            "Check that shared_genes.csv / gene_maps map to gene symbols, not IDs. "
+            "Run: python scripts/build_entrez_symbol_maps.py"
+        )
 
     stats.update(
         {

@@ -86,11 +86,13 @@ export MACAQUE_EMBEDDING_SPECIES=macaca_fascicularis
 
 Gene symbols in your `.h5ad` must appear in each species’ embedding dict. Startup and `SATURN_DRY_RUN=1` check gene–embedding overlap (case-insensitive), not just that embedding files exist. See [SATURN protein embeddings docs](https://github.com/snap-stanford/SATURN/tree/main/protein_embeddings) to generate custom files.
 
-If GENE_HARMONIZE left **Entrez IDs** in `var_names`, the export step remaps them to species-native symbols using (in order) an `adata.var` symbol column, `HARMONIZED_DIR/shared_genes.csv`, or TSVs under `data/gene_maps/` (override with `GENE_MAPS_DIR`). Build the NCBI maps once:
+If GENE_HARMONIZE left **Entrez IDs** in `var_names`, the export step remaps them to species-native symbols using (in order) a real `adata.var` symbol column, `HARMONIZED_DIR/shared_genes.csv`, or TSVs under `data/gene_maps/` (override with `GENE_MAPS_DIR`). Entrez-like values in a symbol-named `adata.var` column are skipped. The TSVs are gitignored — build the NCBI maps once on each host:
 
 ```bash
 python scripts/build_entrez_symbol_maps.py
 ```
+
+If preflight fails with empty gene–embedding overlap and numeric `var_names`, build those maps, remove `cache/saturn_inputs/*_saturn.h5ad`, and re-run. Confirm `SATURN_IMPACTB: gene_remap` logs show a non-`noop` source with symbols (see [`data/gene_maps/README.md`](data/gene_maps/README.md)).
 
 ### 4. Point at harmonized data
 

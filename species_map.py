@@ -196,5 +196,10 @@ def PreflightGeneEmbeddingOverlap(
         raise ValueError(
             "Gene–embedding overlap is empty for one or more species:\n  "
             + "\n  ".join(failures)
+            + "\n\nIf sample_var_names look like Entrez IDs (numeric) while "
+            "sample_embedding_keys are gene symbols, ensure Entrez→symbol remap "
+            "succeeded (check SATURN_IMPACTB: gene_remap logs), build maps with "
+            "`python scripts/build_entrez_symbol_maps.py`, clear "
+            "`cache/saturn_inputs/*_saturn.h5ad`, and re-run."
         )
     return stats

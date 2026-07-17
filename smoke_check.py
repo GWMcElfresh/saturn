@@ -173,8 +173,11 @@ def test_preflight_gene_embedding_overlap(tmp: Path | None = None) -> None:
     try:
         PreflightGeneEmbeddingOverlap({"human": h5ad_path}, {"human": bad_path})
     except ValueError as exc:
-        assert "Gene–embedding overlap is empty" in str(exc)
-        assert "human" in str(exc)
+        msg = str(exc)
+        assert "Gene–embedding overlap is empty" in msg
+        assert "human" in msg
+        assert "build_entrez_symbol_maps.py" in msg
+        assert "gene_remap" in msg
     else:
         raise AssertionError("expected ValueError for zero gene overlap")
 
@@ -245,6 +248,47 @@ def test_gene_id_remap_from_shared_genes_and_maps(tmp: Path | None = None) -> No
     assert ov["human"]["n_matched"] == 3
 
 
+def test_gene_id_remap_skips_entrez_like_symbol_column(tmp: Path | None = None) -> None:
+    """adata.var['symbol'] holding Entrez IDs must not win over gene_maps."""
+    tmp = tmp or SATURN_ROOT / "work" / "smoke_remap_bad_symbol"
+    tmp.mkdir(parents=True, exist_ok=True)
+
+    maps = tmp / "gene_maps"
+    maps.mkdir(exist_ok=True)
+    pd.DataFrame(
+        {"entrez": ["100", "2597", "915"], "symbol": ["ADA", "GAPDH", "CD3D"]}
+    ).to_csv(maps / "human_entrez_to_human_symbol.tsv", sep="\t", index=False)
+
+    adata = _synthetic_adata(n_obs=5, n_vars=3)
+    adata.var_names = ["100", "2597", "915"]
+    # Looks like a symbol column but values are still Entrez IDs
+    adata.var["symbol"] = ["100", "2597", "915"]
+
+    out, stats = RemapAnnDataVarNamesToSymbols(adata, "human", gene_maps_dir=maps)
+    assert stats["remapped"] is True
+    assert stats["source"].startswith("gene_maps:")
+    assert list(out.var_names) == ["ADA", "GAPDH", "CD3D"]
+
+    # Identity map (shared_genes mapping Entrez→Entrez) must raise after remap
+    shared_bad = tmp / "shared_genes_identity.csv"
+    pd.DataFrame(
+        {
+            "human_entrez": [100, 2597, 915],
+            "human_symbol": ["100", "2597", "915"],
+        }
+    ).to_csv(shared_bad, index=False)
+    adata_id = _synthetic_adata(n_obs=5, n_vars=3)
+    adata_id.var_names = ["100", "2597", "915"]
+    try:
+        RemapAnnDataVarNamesToSymbols(
+            adata_id, "human", shared_genes_path=shared_bad
+        )
+    except ValueError as exc:
+        assert "still produced Entrez-like var_names" in str(exc)
+    else:
+        raise AssertionError("expected ValueError for Entrez-like remapped names")
+
+
 if __name__ == "__main__":
     test_cell_type_detection()
     test_cluster_resolution_picker()
@@ -258,4 +302,5 @@ if __name__ == "__main__":
     test_preflight_gene_embedding_overlap()
     test_gene_id_remap_from_var_column()
     test_gene_id_remap_from_shared_genes_and_maps()
+    test_gene_id_remap_skips_entrez_like_symbol_column()
     print("saturn smoke_check: OK")
