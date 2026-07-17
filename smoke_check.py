@@ -18,6 +18,7 @@ sys.path.insert(0, str(SATURN_ROOT))
 from gene_id_remap import (  # noqa: E402
     LooksLikeEntrezIds,
     RemapAnnDataVarNamesToSymbols,
+    ResolveSymbolColumn,
 )
 from label_resolve import ResolveLabelColumn, _find_cluster_column  # noqa: E402
 from saturn_exports import (  # noqa: E402
@@ -289,6 +290,71 @@ def test_gene_id_remap_skips_entrez_like_symbol_column(tmp: Path | None = None) 
         raise AssertionError("expected ValueError for Entrez-like remapped names")
 
 
+def test_gene_id_remap_mixed_ids_uses_maps_not_silent_noop(
+    tmp: Path | None = None,
+) -> None:
+    """70% Entrez + ENSG must remap via gene_maps (not silent noop)."""
+    tmp = tmp or SATURN_ROOT / "work" / "smoke_remap_mixed"
+    tmp.mkdir(parents=True, exist_ok=True)
+
+    maps = tmp / "gene_maps"
+    maps.mkdir(exist_ok=True)
+    entrez_ids = [str(100 + i) for i in range(70)]
+    symbols = [f"SYM{i}" for i in range(70)]
+    pd.DataFrame({"entrez": entrez_ids, "symbol": symbols}).to_csv(
+        maps / "human_entrez_to_human_symbol.tsv", sep="\t", index=False
+    )
+
+    n = 100
+    names = entrez_ids + [f"ENSG{i}" for i in range(30)]
+    assert LooksLikeEntrezIds(names, min_frac=0.8) is False
+    assert LooksLikeEntrezIds(names, min_frac=0.5) is True
+
+    adata = _synthetic_adata(n_obs=3, n_vars=n)
+    adata.var_names = names
+    out, stats = RemapAnnDataVarNamesToSymbols(adata, "human", gene_maps_dir=maps)
+    assert stats["remapped"] is True
+    assert stats["source"].startswith("gene_maps:")
+    assert stats["n_mapped"] == 70
+    assert stats["n_dropped"] == 30
+    assert list(out.var_names[:3]) == ["SYM0", "SYM1", "SYM2"]
+    assert not LooksLikeEntrezIds(out.var_names, min_frac=0.5)
+
+
+def test_gene_id_remap_float_symbol_column_uses_maps(
+    tmp: Path | None = None,
+) -> None:
+    """Float-string Entrez in a symbol column must not win over gene_maps."""
+    tmp = tmp or SATURN_ROOT / "work" / "smoke_remap_float_symbol"
+    tmp.mkdir(parents=True, exist_ok=True)
+
+    maps = tmp / "gene_maps"
+    maps.mkdir(exist_ok=True)
+    pd.DataFrame(
+        {"entrez": ["100", "1000", "10000"], "symbol": ["ADA", "CDH2", "AKT3"]}
+    ).to_csv(maps / "human_entrez_to_human_symbol.tsv", sep="\t", index=False)
+
+    # Float-form var_names alone should also remap (not silent noop)
+    adata_float_names = _synthetic_adata(n_obs=5, n_vars=3)
+    adata_float_names.var_names = ["100.0", "1000.0", "10000.0"]
+    assert LooksLikeEntrezIds(list(adata_float_names.var_names)) is True
+    out_f, stats_f = RemapAnnDataVarNamesToSymbols(
+        adata_float_names, "human", gene_maps_dir=maps
+    )
+    assert stats_f["remapped"] is True
+    assert list(out_f.var_names) == ["ADA", "CDH2", "AKT3"]
+
+    adata = _synthetic_adata(n_obs=5, n_vars=3)
+    adata.var_names = ["100", "1000", "10000"]
+    adata.var["symbol"] = ["100.0", "1000.0", "10000.0"]
+    assert ResolveSymbolColumn(adata.var) is None
+
+    out, stats = RemapAnnDataVarNamesToSymbols(adata, "human", gene_maps_dir=maps)
+    assert stats["remapped"] is True
+    assert stats["source"].startswith("gene_maps:")
+    assert list(out.var_names) == ["ADA", "CDH2", "AKT3"]
+
+
 if __name__ == "__main__":
     test_cell_type_detection()
     test_cluster_resolution_picker()
@@ -303,4 +369,6 @@ if __name__ == "__main__":
     test_gene_id_remap_from_var_column()
     test_gene_id_remap_from_shared_genes_and_maps()
     test_gene_id_remap_skips_entrez_like_symbol_column()
+    test_gene_id_remap_mixed_ids_uses_maps_not_silent_noop()
+    test_gene_id_remap_float_symbol_column_uses_maps()
     print("saturn smoke_check: OK")

@@ -12,7 +12,13 @@ from anndata import AnnData
 
 # ImpacTB GENE_HARMONIZE stores shared human Entrez IDs in var_names across species.
 # SATURN embeddings are keyed by species-native symbols, so we remap before training.
-_ENTREZ_RE = re.compile(r"^\d+$")
+# Accept pure digits and float-string forms like "100.0" (common after AnnData round-trips).
+_ENTREZ_RE = re.compile(r"^\d+(\.0+)?$")
+
+# Attempt remap when at least this fraction of names look Entrez-like and maps exist.
+_REMAP_ATTEMPT_MIN_FRAC = 0.5
+# Strong gate: almost certainly Entrez IDs (legacy threshold).
+_REMAP_STRONG_MIN_FRAC = 0.8
 
 _SYMBOL_COL_CANDIDATES = (
     "gene_symbol",
@@ -62,20 +68,39 @@ _ENTREZ_COL_CANDIDATES = (
 )
 
 
-def LooksLikeEntrezIds(var_names: list[str] | pd.Index, min_frac: float = 0.8) -> bool:
-    """True when most var_names are purely numeric (Entrez-like)."""
+def IsEntrezLikeToken(name: str) -> bool:
+    """True for pure digits or float-string Entrez forms (e.g. '100', '100.0')."""
+    return bool(_ENTREZ_RE.match(str(name).strip()))
+
+
+def NormalizeEntrezKey(name: str) -> str:
+    """Normalize Entrez-like tokens to canonical digit string ('100.0' → '100')."""
+    s = str(name).strip()
+    if not IsEntrezLikeToken(s):
+        return s
+    if "." in s:
+        return str(int(float(s)))
+    return s
+
+
+def EntrezLikeFraction(var_names: list[str] | pd.Index) -> float:
+    """Fraction of names that look Entrez-like."""
     names = [str(g) for g in var_names]
     if not names:
-        return False
-    n_entrez = sum(1 for g in names if _ENTREZ_RE.match(g))
-    return (n_entrez / len(names)) >= min_frac
+        return 0.0
+    return sum(1 for g in names if IsEntrezLikeToken(g)) / len(names)
+
+
+def LooksLikeEntrezIds(var_names: list[str] | pd.Index, min_frac: float = 0.8) -> bool:
+    """True when most var_names are Entrez-like (digits or float-string digits)."""
+    return EntrezLikeFraction(var_names) >= min_frac
 
 
 def ResolveSymbolColumn(var: pd.DataFrame) -> str | None:
     """Return adata.var column that looks like gene symbols, if any.
 
-    Skips columns whose values are mostly Entrez-like (numeric), so identity
-    Entrez→Entrez remaps do not silently win over shared_genes / gene_maps.
+    Skips columns whose values are mostly Entrez-like (numeric / float-string), so
+    identity Entrez→Entrez remaps do not silently win over shared_genes / gene_maps.
     """
     for col in _SYMBOL_COL_CANDIDATES:
         if col not in var.columns:
@@ -116,8 +141,9 @@ def LoadSharedGenesMap(path: Path, species: str) -> dict[str, str] | None:
         if pd.isna(entrez) or pd.isna(symbol):
             continue
         e = str(int(entrez)) if isinstance(entrez, (int, float, np.integer, np.floating)) else str(entrez).strip()
+        e = NormalizeEntrezKey(e)
         s = str(symbol).strip()
-        if _ENTREZ_RE.match(e) and s and s.lower() not in {"nan", "none", "na"}:
+        if IsEntrezLikeToken(e) and s and s.lower() not in {"nan", "none", "na"}:
             mapping[e] = s
     return mapping or None
 
@@ -145,11 +171,24 @@ def LoadEntrezSymbolMap(gene_maps_dir: Path, species: str) -> dict[str, str] | N
     for entrez, symbol in zip(df[entrez_col], df[symbol_col]):
         if pd.isna(entrez) or pd.isna(symbol):
             continue
-        e = str(entrez).strip()
+        e = NormalizeEntrezKey(str(entrez).strip())
         s = str(symbol).strip()
         if e and s and s.lower() not in {"nan", "none", "na"}:
             mapping[e] = s
     return mapping or None
+
+
+def _ExternalMapsAvailable(
+    species: str,
+    *,
+    shared_genes_path: Path | None,
+    gene_maps_dir: Path | None,
+) -> bool:
+    if shared_genes_path is not None and Path(shared_genes_path).exists():
+        return True
+    if gene_maps_dir is not None and GeneMapTsvPath(gene_maps_dir, species).exists():
+        return True
+    return False
 
 
 def ResolveEntrezToSymbolMap(
@@ -162,11 +201,14 @@ def ResolveEntrezToSymbolMap(
     """Resolve mapping source: adata.var column → shared_genes.csv → gene_maps TSV."""
     symbol_col = ResolveSymbolColumn(adata.var)
     if symbol_col is not None:
-        mapping = {
-            str(eid): str(sym).strip()
-            for eid, sym in zip(adata.var_names, adata.var[symbol_col])
-            if pd.notna(sym) and str(sym).strip()
-        }
+        mapping = {}
+        for eid, sym in zip(adata.var_names, adata.var[symbol_col]):
+            if pd.isna(sym) or not str(sym).strip():
+                continue
+            key = str(eid)
+            if IsEntrezLikeToken(key):
+                key = NormalizeEntrezKey(key)
+            mapping[key] = str(sym).strip()
         return mapping, f"adata.var['{symbol_col}']"
 
     if shared_genes_path is not None:
@@ -187,6 +229,15 @@ def ResolveEntrezToSymbolMap(
     )
 
 
+def _LookupSymbol(mapping: dict[str, str], eid: str) -> str | None:
+    if eid in mapping:
+        return mapping[eid]
+    key = NormalizeEntrezKey(eid)
+    if key != eid and key in mapping:
+        return mapping[key]
+    return None
+
+
 def RemapAnnDataVarNamesToSymbols(
     adata: AnnData,
     species: str,
@@ -199,8 +250,14 @@ def RemapAnnDataVarNamesToSymbols(
 
     Drops unmapped genes and collapses duplicate symbols (keeps first). Stores
     original IDs in ``adata.var['entrez_id']``.
+
+    Remap is attempted when names look strongly Entrez-like (≥80%), or when a
+    material Entrez-like fraction (≥50%) is present and gene maps / shared_genes
+    / a real symbol column are available. Noop is always logged; material Entrez
+    without maps fails closed.
     """
     var_names = [str(g) for g in adata.var_names]
+    entrez_frac = EntrezLikeFraction(var_names)
     stats: dict[str, Any] = {
         "species": species,
         "n_input": len(var_names),
@@ -210,8 +267,36 @@ def RemapAnnDataVarNamesToSymbols(
         "n_dropped": 0,
         "n_dup_collapsed": 0,
         "n_output": len(var_names),
+        "entrez_frac": entrez_frac,
     }
-    if not force and not LooksLikeEntrezIds(var_names):
+
+    maps_available = _ExternalMapsAvailable(
+        species,
+        shared_genes_path=shared_genes_path,
+        gene_maps_dir=gene_maps_dir,
+    ) or (ResolveSymbolColumn(adata.var) is not None)
+
+    should_remap = force or LooksLikeEntrezIds(
+        var_names, min_frac=_REMAP_STRONG_MIN_FRAC
+    )
+    if not should_remap and entrez_frac >= _REMAP_ATTEMPT_MIN_FRAC and maps_available:
+        should_remap = True
+
+    if not should_remap:
+        sample = var_names[:5]
+        print(
+            f"SATURN_IMPACTB: gene_remap species={species} source=noop "
+            f"entrez_frac={entrez_frac:.3f} n_input={len(var_names)} "
+            f"sample_var_names={sample}",
+            flush=True,
+        )
+        if entrez_frac >= _REMAP_ATTEMPT_MIN_FRAC:
+            raise FileNotFoundError(
+                f"Entrez-like var_names detected for species={species} "
+                f"(entrez_frac={entrez_frac:.3f}) but no usable symbol map. "
+                f"sample_var_names={sample}. "
+                "Run: python scripts/build_entrez_symbol_maps.py"
+            )
         return adata, stats
 
     mapping, source = ResolveEntrezToSymbolMap(
@@ -223,7 +308,7 @@ def RemapAnnDataVarNamesToSymbols(
     symbols: list[str] = []
     keep_idx: list[int] = []
     for i, eid in enumerate(var_names):
-        sym = mapping.get(eid)
+        sym = _LookupSymbol(mapping, eid)
         if sym is None:
             continue
         symbols.append(sym)
@@ -234,7 +319,8 @@ def RemapAnnDataVarNamesToSymbols(
     if n_mapped == 0:
         raise ValueError(
             f"Entrez→symbol remap produced 0 mapped genes for species={species} "
-            f"(source={source}, n_input={len(var_names)}, map_size={len(mapping)}). "
+            f"(source={source}, n_input={len(var_names)}, map_size={len(mapping)}, "
+            f"entrez_frac={entrez_frac:.3f}). "
             f"sample_var_names={var_names[:5]}; sample_map_keys={list(mapping)[:5]}"
         )
 
@@ -260,10 +346,11 @@ def RemapAnnDataVarNamesToSymbols(
     out.var_names = pd.Index(uniq_symbols, name=out.var_names.name)
     out.var_names_make_unique()
 
-    if LooksLikeEntrezIds(out.var_names):
+    if LooksLikeEntrezIds(out.var_names, min_frac=_REMAP_ATTEMPT_MIN_FRAC):
         raise ValueError(
             f"Entrez→symbol remap still produced Entrez-like var_names for "
-            f"species={species} (source={source}, n_out={out.n_vars}). "
+            f"species={species} (source={source}, n_out={out.n_vars}, "
+            f"entrez_frac={EntrezLikeFraction(out.var_names):.3f}). "
             f"sample_var_names={list(out.var_names[:5])}. "
             "Check that shared_genes.csv / gene_maps map to gene symbols, not IDs. "
             "Run: python scripts/build_entrez_symbol_maps.py"
@@ -282,7 +369,7 @@ def RemapAnnDataVarNamesToSymbols(
     print(
         f"SATURN_IMPACTB: gene_remap species={species} source={source} "
         f"mapped={n_mapped}/{len(var_names)} dropped={n_dropped} "
-        f"dup_collapsed={n_dup} n_out={out.n_vars}",
+        f"dup_collapsed={n_dup} n_out={out.n_vars} entrez_frac={entrez_frac:.3f}",
         flush=True,
     )
     return out, stats

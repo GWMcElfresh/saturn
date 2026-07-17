@@ -25,3 +25,9 @@ If preflight reports `0/... genes match embedding` with numeric `sample_var_name
 2. Clear stale SATURN inputs: `rm -f cache/saturn_inputs/*_saturn.h5ad`
 3. Re-run (`SATURN_DRY_RUN=1` is enough to validate). Logs should show
    `SATURN_IMPACTB: gene_remap ... mapped=.../...` with a `gene_maps:` or `shared_genes:` source — not `noop`, and not still-numeric `var_names`.
+
+```bash
+rm -f cache/saturn_inputs/*_saturn.h5ad
+SATURN_DRY_RUN=1 python impac_tb_saturn.py
+# expect: gene_remap source=gene_maps:... and gene_overlap matched>0
+```
