@@ -111,6 +111,29 @@ Forecasted after the write_h5ad fix; mitigated in-repo before the next dry-run:
    `bash scripts/submit_dry_run.sh` (`partition=batch`, `SATURN_DRY_RUN=1`).
 
 --------------------------------------------------------------------------------
+## 2026-07-17 — Dry-run OOM (128GB)
+
+### Symptom
+```
+slurmstepd: error: Detected 1 oom_kill event in StepId=….batch.
+```
+Job died soon after scanpy import (FutureWarnings), before `dry_run_ok`.
+
+### Root cause
+`scripts/submit_dry_run.sh` requested `--mem=128GB`. Dry-run still runs full
+preprocess (`densify_adata` on three species), so peak RAM matches the GPU
+batch path (~200GB), not a light validation.
+
+### Fix
+Raise dry-run `#SBATCH --mem=200GB` (same as `submit_run.sh`). Set
+`PYTHONUNBUFFERED=1` so phase breadcrumbs flush before an OOM.
+
+### Re-run
+```bash
+bash scripts/submit_dry_run.sh
+```
+
+--------------------------------------------------------------------------------
 ## How to validate on HPC
 
 ```bash

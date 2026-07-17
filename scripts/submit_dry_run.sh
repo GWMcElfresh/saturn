@@ -3,7 +3,8 @@
 #SBATCH --signal=USR2
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=4
-#SBATCH --mem=128GB
+# Same peak RAM as submit_run.sh: dry-run still densifies 3 species AnnData.
+#SBATCH --mem=200GB
 #SBATCH --partition=batch
 
 # CPU dry-run for impac_tb_saturn.py (validate remap + gene–embedding overlap).
@@ -34,6 +35,7 @@ mkdir -p -m 700 "${tmpdir}/tmp"
 export TMPDIR="${tmpdir}/tmp"
 export WORKING_DIR HARMONIZED_DIR SATURN_OUTPUT_DIR EMBEDDINGS_DIR SATURN_EMBEDDING_MODEL
 export SATURN_DRY_RUN=1
+export PYTHONUNBUFFERED=1
 export OMP_NUM_THREADS="${SLURM_CPUS_PER_TASK:-${SLURM_JOB_CPUS_PER_NODE:-4}}"
 export MPLBACKEND=Agg
 
